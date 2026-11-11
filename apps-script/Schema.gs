@@ -26,6 +26,7 @@ const BICA_SHEETS = {
   'Config_PDF': ['bloco_id', 'campos_json', 'atualizado_em', 'alterado_por'],
   'Dicionario': ['pergunta_id', 'grupo', 'pergunta', 'tipo', 'opcoes_json', 'origem', 'observacao'],
   'Auditoria': ['id', 'momento', 'ator_id', 'acao', 'entidade', 'entidade_id', 'detalhes_json'],
+  'Feedback': ['id', 'momento', 'ator_id', 'ator_nome', 'perfil', 'tipo', 'texto', 'pagina', 'status', 'resolvido_em', 'resolvido_por'],
   'Resumo': ['indicador', 'valor', 'observacao']
 };
 
@@ -44,14 +45,14 @@ const BICA_QUESTIONS = [
   {id: 'preventivo', group: 'Acesso e cuidado', label: 'Quando foi sua última prevenção?', type: 'single', origin: 'original', options: [['menos1', 'Há menos de 1 ano'], ['1mais', 'Há mais de 1 ano'], ['nunca', 'Nunca fiz'], ['na', 'Não se aplica'], ['naosei', 'Não sei informar']], note: 'Definir exame e elegibilidade antes da pesquisa.'},
   {id: 'comunicacao', group: 'Relacionamento com a unidade', label: 'Como você se comunica com a unidade?', type: 'multi', origin: 'original', options: [['presencial', 'Presencial'], ['ligacao', 'Telefone (ligação)'], ['whatsapp', 'WhatsApp'], ['conecta', 'Conecta']]},
   {id: 'conecta', group: 'Relacionamento com a unidade', label: 'Você conhece o Conecta?', type: 'single', origin: 'original', options: [['atual', 'Conheço e utilizo'], ['nunca', 'Conheço, mas não utilizo'], ['desconhece', 'Não conheço']]},
-  {id: 'motivos_conecta', group: 'Relacionamento com a unidade', label: 'Por que você não utiliza o Conecta?', type: 'multi', origin: 'original', depends: {field: 'conecta', values: ['nunca', 'desconhece']}, options: [['celular', 'Não tenho celular'], ['trava', 'O app trava'], ['utilizar', 'Não sei mexer no aplicativo'], ['vagas', 'Faltam vagas no aplicativo Conecta']]},
+  {id: 'motivos_conecta', group: 'Relacionamento com a unidade', label: 'Por que você não utiliza o Conecta?', type: 'multi', origin: 'original', depends: {field: 'conecta', values: ['nunca', 'desconhece']}, options: [['celular', 'Não tenho celular'], ['trava', 'O app trava'], ['utilizar', 'Não sei mexer no aplicativo'], ['vagas', 'Faltam vagas no aplicativo Conecta'], ['nao_explicaram', 'Não me explicaram como funciona']]},
   {id: 'servicos', group: 'Acesso e cuidado', label: 'Acesso a serviços de saúde', type: 'multi', origin: 'original', options: [['sus', 'SUS'], ['plano', 'Plano de saúde'], ['mutirao', 'Mutirão político/social/igreja']]},
   {id: 'marcacao', group: 'Relacionamento com a unidade', label: 'Como você marca a consulta?', type: 'multi', origin: 'original', options: [['acolhimento', 'Acolhimento'], ['recepcao', 'Marcação tradicional na recepção'], ['conecta', 'Conecta Recife'], ['grupos', 'Grupos (Hiperdia...)'], ['acs', 'Consulta facilitada com ACS']]},
-  {id: 'dificuldades', group: 'Barreiras e melhorias', label: 'Quais suas dificuldades para chegar até a unidade?', type: 'multi', origin: 'original', options: [['ingreme', 'Barreira íngreme'], ['transporte', 'Dificuldade de acesso ao transporte'], ['locomocao', 'Dificuldade de locomoção'], ['horario', 'Horário de funcionamento da unidade'], ['cuidador', 'Sobrecarga de cuidador'], ['esquece', 'Esqueço de marcar consultas'], ['trabalho', 'Conflito com horário de trabalho'], ['outros', 'Outros (especificar)']]},
-  {id: 'sem_dificuldades', group: 'Barreiras e melhorias', label: 'Você enfrenta alguma dificuldade para acessar a unidade?', type: 'single', origin: 'proposta', options: [['sim', 'Sim'], ['nao', 'Não'], ['naosei', 'Não sei informar']], note: 'Diferencia resposta negativa de campo não preenchido.'},
+  {id: 'sem_dificuldades', group: 'Barreiras e melhorias', label: 'Você enfrenta alguma dificuldade para acessar a unidade?', type: 'single', origin: 'proposta', options: [['sim', 'Tem dificuldade'], ['nao', 'Não tem dificuldade'], ['naosei', 'Não sabe informar']], note: 'Pergunta-filtro: “Tem dificuldade” abre a lista de dificuldades.'},
+  {id: 'dificuldades', group: 'Barreiras e melhorias', label: 'Quais suas dificuldades para chegar até a unidade?', type: 'multi', origin: 'original', depends: {field: 'sem_dificuldades', values: ['sim']}, options: [['ingreme', 'Barreira íngreme'], ['transporte', 'Dificuldade de acesso ao transporte'], ['locomocao', 'Dificuldade de locomoção'], ['horario', 'Horário de funcionamento da unidade'], ['cuidador', 'Sobrecarga de cuidador'], ['esquece', 'Esqueço de marcar consultas'], ['trabalho', 'Conflito com horário de trabalho'], ['outros', 'Outros (especificar)']]},
+  {id: 'dificuldade_outro', group: 'Barreiras e melhorias', label: 'Se marcou “Outros”, descreva a dificuldade', type: 'text', origin: 'proposta', depends: {field: 'dificuldades', values: ['outros']}},
   {id: 'informacao_sus', group: 'Barreiras e melhorias', label: 'Alguém da equipe já explicou como funcionam os serviços e o agendamento da UBS?', type: 'single', origin: 'proposta', options: [['sim', 'Sim'], ['nao', 'Não'], ['naosei', 'Não lembro / não sei']]},
-  {id: 'sugestao_sus', group: 'Barreiras e melhorias', label: 'O que você gostaria de compreender melhor sobre a UBS ou o SUS?', type: 'text', origin: 'proposta'},
-  {id: 'dificuldade_outro', group: 'Barreiras e melhorias', label: 'Se marcou “Outros”, descreva a dificuldade', type: 'text', origin: 'proposta', depends: {field: 'dificuldades', values: ['outros']}}
+  {id: 'sugestao_sus', group: 'Barreiras e melhorias', label: 'O que você gostaria de compreender melhor sobre a UBS ou o SUS?', type: 'text', origin: 'proposta'}
 ];
 
 const BICA_MODULES = [

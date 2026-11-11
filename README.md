@@ -34,6 +34,9 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 
 ### Atualizar depois
 
+> **Versão 1.1 do servidor:** depois de colar os arquivos novos, execute `configurarBica()` de novo (cria a aba **Feedback** e atualiza o **Dicionario**, sem apagar nada) e publique uma nova versão em *Gerenciar implantações*. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
+
+
 - **Interface (`index.html`):** basta fazer o commit no GitHub. Para o Apps Script mostrar a mudança na hora, execute `atualizarInterfaceBica()` no editor.
 - **Servidor (`.gs`):** cole o novo código e vá em *Implantar → Gerenciar implantações → editar (lápis) → Versão: Nova versão*. Assim a URL `/exec` não muda.
 - `verificarBica()` mostra o estado da conexão sem alterar dados.

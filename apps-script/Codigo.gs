@@ -330,7 +330,7 @@ function verificarBica() {
   return info;
 }
 
-function bicaPing_() { return {name: BICA_TITLE, time: bicaNow_(), configured: !!PropertiesService.getScriptProperties().getProperty(BICA_SECRET_PROP)}; }
+function bicaPing_() { return {name: BICA_TITLE, version: BICA_VERSAO, time: bicaNow_(), configured: !!PropertiesService.getScriptProperties().getProperty(BICA_SECRET_PROP)}; }
 
 /* ============================== ACESSO ============================== */
 
@@ -396,6 +396,8 @@ function bicaRoute_(req) {
     case 'setAccessActive': coord(); return withState(bicaSetAccessActive_(actor, data));
     case 'resetPassword': coord(); return withState(bicaResetPassword_(actor, data));
     case 'geoSuggest': coord(); return bicaGeoSuggest_(actor, data);
+    case 'addFeedback': return withState(bicaAddFeedback_(actor, data));
+    case 'setFeedbackStatus': coord(); return withState(bicaSetFeedbackStatus_(actor, data));
     default: throw new Error('Operação não reconhecida: ' + op);
   }
 }
@@ -518,7 +520,7 @@ function bicaSnapshot_(actor) {
   });
   const terms = {};
   termsRaw.filter(t => bicaTrue_(t.ativo)).forEach(t => { terms[String(t.bloco_id)] = {id: String(t.id), version: bicaStr_(t.versao), body: bicaStr_(t.texto_completo), updated: bicaStr_(t.criado_em)}; });
-  const out = {user: actor, title: BICA_TITLE, stage: bicaParam_('ETAPA') || 'PREPARACAO', avgResidents: bicaAvg_(), blocks, streets, teams, acs, houses, persons, records, terms, questions: BICA_QUESTIONS, modules: BICA_MODULES, serverTime: bicaNow_()};
+  const out = {user: actor, title: BICA_TITLE, stage: bicaParam_('ETAPA') || 'PREPARACAO', avgResidents: bicaAvg_(), blocks, streets, teams, acs, houses, persons, records, terms, questions: BICA_QUESTIONS, modules: BICA_MODULES, serverTime: bicaNow_(), serverVersion: BICA_VERSAO};
   if (coord) {
     out.dbUrl = bicaDb_().getUrl();
     out.termsAll = {};
@@ -526,6 +528,7 @@ function bicaSnapshot_(actor) {
     out.pdfConfigs = {};
     bicaRows_('Config_PDF').forEach(r => { const c = Object.assign({}, BICA_PDF_DEFAULT, bicaJson_(r.campos_json)); out.pdfConfigs[String(r.bloco_id)] = c; });
     out.staff = bicaRows_('Acessos').map(x => ({id: String(x.id), name: String(x.identificacao), role: bicaRole_(x.perfil), login: String(x.login), active: bicaTrue_(x.ativo), created: bicaStr_(x.criado_em)}));
+    out.feedback = bicaDb_().getSheetByName('Feedback') ? bicaTail_('Feedback', 300).reverse().map(x => ({id: bicaStr_(x.id), at: bicaStr_(x.momento), actor_id: bicaStr_(x.ator_id), actor: bicaStr_(x.ator_nome), role: bicaStr_(x.perfil), type: bicaStr_(x.tipo), text: bicaStr_(x.texto), page: bicaStr_(x.pagina), status: bicaStr_(x.status) || 'NOVO', resolved_at: bicaStr_(x.resolvido_em)})) : [];
     out.audit = bicaTail_('Auditoria', 40).reverse().map(x => ({at: bicaStr_(x.momento), actor: accName[String(x.ator_id)] || bicaStr_(x.ator_id), action: bicaStr_(x.acao), entity: bicaStr_(x.entidade), entity_id: bicaStr_(x.entidade_id), details: bicaStr_(x.detalhes_json).slice(0, 300)}));
   }
   return out;
@@ -726,9 +729,10 @@ function bicaSaveHouse_(actor, a) {
     const newStreetId = a.street_id === undefined ? (curStreet ? curStreet.id : String(h.rua_id)) : bicaStr_(a.street_id);
     const newNumber = a.number === undefined ? bicaStr_(h.numero) : bicaClean_(a.number, 35);
     const newComp = a.complement === undefined ? bicaStr_(h.complemento) : bicaClean_(a.complement, 160);
-    const addressChanged = (curStreet ? curStreet.id : String(h.rua_id)) !== newStreetId || bicaCanon_(h.numero) !== bicaCanon_(newNumber) || bicaStr_(h.complemento) !== newComp;
+    const streetChanged = (curStreet ? curStreet.id : String(h.rua_id)) !== newStreetId;
+    const addressChanged = streetChanged || bicaStr_(h.numero) !== newNumber || bicaStr_(h.complemento) !== newComp;
     if (addressChanged) {
-      bicaAssert_(coord, 'Somente a coordenação pode alterar rua, número ou complemento de uma casa já cadastrada.');
+      bicaAssert_(coord || !streetChanged, 'Somente a coordenação pode mudar a casa de rua. Número e complemento podem ser corrigidos por toda a equipe.');
       const st = bicaCanonStreet_(newStreetId, streets);
       bicaAssert_(st, 'Selecione uma rua cadastrada.');
       bicaAssert_(newNumber, 'Informe o número da casa ou S/N.');
@@ -750,6 +754,45 @@ function bicaGeoSuggest_(actor, a) {
   const res = Maps.newGeocoder().setRegion('br').setLanguage('pt-BR').geocode(address), first = res.results && res.results[0], loc = first && first.geometry && first.geometry.location;
   bicaAssert_(loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng), 'Endereço não localizado automaticamente. Use o GPS no local ou informe as coordenadas.');
   return {lat: loc.lat, lon: loc.lng, address: first.formatted_address || '', precision: first.geometry.location_type || 'aproximada'};
+}
+
+/* ============================== ERROS, BUGS E MELHORIAS ============================== */
+
+/** Cria a aba se ainda não existir (permite usar recursos novos antes de rodar configurarBica novamente). */
+function bicaEnsureSheet_(name) {
+  const db = bicaDb_();
+  let s = db.getSheetByName(name);
+  if (s) return s;
+  const heads = BICA_SHEETS[name];
+  s = db.insertSheet(name);
+  s.getRange(1, 1, 1, heads.length).setValues([heads]).setBackground('#145da4').setFontColor('#ffffff').setFontWeight('bold');
+  s.setFrozenRows(1);
+  delete BICA_HEAD_CACHE[name]; delete BICA_ROWS_CACHE[name];
+  return s;
+}
+
+function bicaAddFeedback_(actor, a) {
+  const tipo = String(a.tipo || '').toUpperCase();
+  bicaAssert_(['ERRO', 'BUG', 'MELHORIA'].indexOf(tipo) >= 0, 'Escolha o tipo: erro, bug ou melhoria.');
+  const texto = String(a.texto === null || a.texto === undefined ? '' : a.texto).trim().slice(0, 2000);
+  bicaAssert_(texto.length >= 5, 'Descreva o que aconteceu (mínimo 5 caracteres).');
+  return bicaLock_(function () {
+    bicaEnsureSheet_('Feedback');
+    const id = bicaId_('FDB');
+    bicaAppend_('Feedback', {id: id, momento: bicaNow_(), ator_id: actor.id, ator_nome: actor.name, perfil: actor.role, tipo: tipo, texto: texto, pagina: bicaClean_(a.pagina, 80), status: 'NOVO', resolvido_em: '', resolvido_por: ''});
+    return {id: id};
+  });
+}
+
+function bicaSetFeedbackStatus_(actor, a) {
+  const status = String(a.status || '').toUpperCase();
+  bicaAssert_(['NOVO', 'EM_ANALISE', 'RESOLVIDO'].indexOf(status) >= 0, 'Situação inválida.');
+  return bicaLock_(function () {
+    bicaEnsureSheet_('Feedback');
+    bicaAssert_(bicaRows_('Feedback').some(x => String(x.id) === String(a.id)), 'Registro não encontrado.');
+    bicaSetRow_('Feedback', 'id', a.id, {status: status, resolvido_em: status === 'RESOLVIDO' ? bicaNow_() : '', resolvido_por: status === 'RESOLVIDO' ? actor.id : ''});
+    return {id: String(a.id), status: status};
+  });
 }
 
 /* ============================== EQUIPES E ACS ============================== */
