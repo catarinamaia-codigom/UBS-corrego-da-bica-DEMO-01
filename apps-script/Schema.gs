@@ -15,7 +15,7 @@ const BICA_SHEETS = {
   'Equipes': ['id', 'nome', 'canonico', 'ativa', 'criado_em', 'criado_por'],
   'ACS': ['id', 'nome', 'canonico', 'ativa', 'criado_em', 'criado_por'],
   'Fusoes_Cadastros': ['id', 'tipo', 'origem_id', 'principal_id', 'momento', 'ator_id', 'observacao'],
-  'Domicilios': ['id', 'rua_id', 'numero', 'complemento', 'moradores_declarados', 'equipe_id', 'acs_id', 'situacao', 'latitude', 'longitude', 'geo_status', 'criado_em', 'atualizado_em', 'criado_por', 'atualizado_por'],
+  'Domicilios': ['id', 'rua_id', 'numero', 'complemento', 'moradores_declarados', 'equipe_id', 'acs_id', 'situacao', 'latitude', 'longitude', 'geo_status', 'criado_em', 'atualizado_em', 'criado_por', 'atualizado_por', 'origem_cadastro', 'numero_acs', 'complemento_acs', 'conferencia_status', 'conferencia_caso', 'conferencia_obs', 'conferido_em', 'conferido_por', 'conferencia_historico'],
   'Pessoas': ['id', 'domicilio_id', 'nome_opcional', 'sexo', 'idade_referida', 'parentesco', 'criado_em', 'atualizado_em'],
   'Visitas': ['id', 'request_id', 'bloco_id', 'domicilio_id', 'coletor_id', 'situacao', 'momento', 'moradores_informados', 'observacao', 'origem'],
   'Participacoes': ['id', 'visita_id', 'bloco_id', 'domicilio_id', 'pessoa_id', 'situacao', 'momento', 'coletor_id'],

@@ -957,6 +957,17 @@ body.has-netbar{padding-bottom:64px}body.has-netbar .toast{bottom:70px}
 .field .qe-hide input,.qe-hide input{width:17px!important;height:17px!important;min-height:0!important;padding:0}
 .field .qe-opt input:not([type=checkbox]){min-width:0}
 .qh-chip.type{background:#f1ecfb;border-color:#ddd1f3;color:#5b3f99}
+
+/* conferência do cadastro das ACS */
+.check-card{margin-bottom:18px}.check-actions{display:flex;flex-wrap:wrap;gap:8px}
+.check-stats{margin:14px 0 6px}.check-stats .stat.warn strong{color:#a2561b}
+.check-group{margin:8px 0 10px}
+.ck{display:inline-block;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;border:1px solid #d8e4e5;background:#f1f6f7;color:#56707a;white-space:nowrap}
+.ck-ok{background:#e9f5ef;border-color:#cfe6d9;color:#25745a}.ck-new{background:#eaf2f9;border-color:#cfe0ee;color:#1d5f97}.ck-addr{background:#fff3df;border-color:#efd9ad;color:#94591a}.ck-other{background:#fdebe8;border-color:#f3cfc9;color:#a23a2c}.ck-pend{background:#f3f4f4;color:#6b7a7f}
+td .ck+small{display:block;margin-top:3px;font-size:9.5px;color:#94591a}
+.check-box{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:6px 0 14px;background:#fbfcfc}.check-box h3{margin:0 0 6px;font-size:13px}
+.check-log{white-space:pre-wrap;font-size:11px;line-height:1.6;color:#3d5c63;margin-top:6px}
+.check-group .houses-filter{display:inline-flex;flex-direction:column;width:auto}.check-group select{width:auto;min-width:220px}
 </style></head><body>
 <div id="loginScreen" class="login-screen">
  <div class="login-card card pad">
@@ -1033,10 +1044,14 @@ body.has-netbar{padding-bottom:64px}body.has-netbar .toast{bottom:70px}
 
 <section id="houses" class="page">
  <div class="page-heading"><div><span class="eyebrow">TERRITÓRIO · CADASTRO DE CASAS</span><h1>Domicílios</h1><p>Cadastre casas antes ou durante as visitas, vincule equipe e ACS e acompanhe o total de moradores por rua. Casas sem número de moradores informado entram nas estimativas com a média de <b class="avgLabel">3</b> moradores.</p></div><button class="btn primary" id="newHouseBtn" type="button">+ Cadastrar domicílio</button></div>
- <div class="block-bar"><label class="houses-filter">Rua<select id="houseStreetFilter"></select></label><label class="houses-filter">Equipe<select id="houseTeamFilter"></select></label><label class="houses-filter">ACS<select id="houseAcsFilter"></select></label><label class="houses-filter grow">Buscar<input id="houseSearch" type="search" placeholder="Número ou complemento…"></label></div>
+ <div class="block-bar"><label class="houses-filter">Rua<select id="houseStreetFilter"></select></label><label class="houses-filter">Equipe<select id="houseTeamFilter"></select></label><label class="houses-filter">ACS<select id="houseAcsFilter"></select></label><label class="houses-filter">Conferência<select id="houseCheckFilter"><option value="all">Todas</option><option value="pend">Não conferidas ainda</option><option value="ok">Conferidas sem erro</option><option value="addr">Nº ou complemento errado/faltante</option><option value="new">Não constava na ACS</option><option value="other">Não existe, duplicada, erro manual, outro</option></select></label><label class="houses-filter grow">Buscar<input id="houseSearch" type="search" placeholder="Número ou complemento…"></label></div>
  <div id="houseStats" class="stats"></div>
+ <div class="card pad check-card"><div class="subhead"><div><h2>Conferência do cadastro das ACS</h2><p class="muted-hint">Valida o cadastro importado dos tablets das ACS: cada correção de número/complemento (no cadastro ou durante a pesquisa) e cada visita registrada conferem a casa. Casas incluídas depois ficam como <b>Não constava na ACS</b>. Respeita os filtros acima.</p></div><div class="check-actions"><button type="button" class="btn small" id="checkCsvBtn">⬇ Baixar tabela (CSV)</button><button type="button" class="btn small primary" id="checkExportBtn" data-admin="1">Exportar para a planilha</button></div></div>
+ <div id="checkStats" class="stats check-stats"></div>
+ <div class="check-group"><label class="houses-filter">Agrupar por<select id="checkGroup"><option value="street">Rua</option><option value="acs">ACS responsável</option></select></label></div>
+ <div class="dashv3-tablewrap"><table class="dashv3-table"><thead><tr><th id="checkGroupHead">Rua</th><th>Do tablet ACS</th><th>Conferidas</th><th>Nº errado</th><th>Sem complemento</th><th>Complemento errado</th><th>Nº e compl. errados</th><th>Não existe / outros</th><th>Não constava na ACS</th><th>% com erro de endereço</th></tr></thead><tbody id="checkRows"></tbody></table></div></div>
  <div class="card pad"><div class="subhead"><div><h2>Moradores por rua</h2><p class="muted-hint">Moradores informados nas casas + estimativa para casas sem informação e casas previstas ainda não cadastradas.</p></div></div><div class="dashv3-tablewrap"><table class="dashv3-table"><thead><tr><th>Rua</th><th>Casas previstas</th><th>Casas cadastradas</th><th>Com nº informado</th><th>Moradores informados</th><th>Total estimado na rua</th></tr></thead><tbody id="streetTotalsRows"></tbody></table></div></div>
- <div class="card pad" style="margin-top:18px"><div class="subhead"><h2 id="houseListTitle">Casas cadastradas</h2><span class="tag" id="houseCountTag">—</span></div><div class="dashv3-tablewrap"><table class="dashv3-table house-table"><thead><tr><th>Endereço</th><th>Moradores</th><th>Equipe</th><th>ACS</th><th>Situação no bloco</th><th>Tentativas</th><th>Local</th><th></th></tr></thead><tbody id="houseRows"></tbody></table></div></div>
+ <div class="card pad" style="margin-top:18px"><div class="subhead"><h2 id="houseListTitle">Casas cadastradas</h2><span class="tag" id="houseCountTag">—</span></div><div class="dashv3-tablewrap"><table class="dashv3-table house-table"><thead><tr><th>Endereço</th><th>Moradores</th><th>Equipe</th><th>ACS</th><th>Cadastro ACS</th><th>Situação no bloco</th><th>Tentativas</th><th>Local</th><th></th></tr></thead><tbody id="houseRows"></tbody></table></div></div>
  <div class="two-col" style="margin-top:18px">
   <div class="card pad"><h2>ACS cadastradas</h2><p class="muted-hint">Os nomes ficam salvos para seleção rápida na coleta e no cadastro de casas.</p><div class="row-add"><input id="newAcsName" maxlength="100" placeholder="Nome da ACS" autocomplete="off"><button class="btn" type="button" id="addAcsBtn">+ Adicionar ACS</button></div><div id="acsChips" class="chips"></div></div>
   <div class="card pad"><h2>Equipes</h2><p class="muted-hint">Cadastre cada equipe uma vez; depois é só selecionar.</p><div class="row-add"><input id="newTeamName" maxlength="100" placeholder="Ex.: Equipe 2" autocomplete="off"><button class="btn" type="button" id="addTeamBtn">+ Adicionar equipe</button></div><div id="teamChips" class="chips"></div></div>
@@ -1112,7 +1127,7 @@ const STATUS_LABEL={PENDENTE:'Pendente',CONCLUIDA:'Concluído',PARCIAL:'Parcial'
 const STATUS_PILL={PENDENTE:'todo',CONCLUIDA:'done',PARCIAL:'partial',RECUSA:'refused',AUSENTE:'absent'};
 const OUTCOMES=[['','Aguardando manifestação'],['CONCORDOU','Concordou'],['RECUSOU','Não concordou'],['NAO_SABE','Não sabe responder'],['AUSENTE','Ausente (conta como tentativa)']];
 const OUTCOME_CHIPS=[['CONCORDOU','Concordou'],['RECUSOU','Não concordou'],['NAO_SABE','Não sabe responder'],['AUSENTE','Ausente']];
-const BICA_SERVER_MIN='1.3';
+const BICA_SERVER_MIN='1.4';
 const OUTCOME_MARK={CONCORDOU:'✓',RECUSOU:'×',NAO_SABE:'?',AUSENTE:'⌂'};
 const OUTCOME_TEXT={'':'pendente',CONCORDOU:'aceite registrado',RECUSOU:'não concordou',NAO_SABE:'não sabe responder',AUSENTE:'ausente'};
 const CONSENT_MODES=[['registro_operador','Registro do entrevistador'],['assinatura_eletronica','Assinatura eletrônica'],['registro_sonoro_referenciado','Registro sonoro referenciado']];
@@ -1683,14 +1698,45 @@ async function collectorNewStreet(){
 }
 
 /* ============================== DOMICÍLIOS ============================== */
+/* ---- Conferência do cadastro das ACS ---- */
+const CHECK_CASES={PENDENTE:'Pendente',OK:'Confirmado sem erro',NUMERO_ERRADO:'Número errado',SEM_COMPLEMENTO:'Sem complemento',COMPLEMENTO_ERRADO:'Complemento errado',NUMERO_E_COMPLEMENTO:'Número e complemento errados',NAO_EXISTE:'Não existe essa casa',DUPLICADA:'Casa duplicada no cadastro',ERRO_MANUAL:'Erro de cadastro manual',NAO_CONSTAVA_ACS:'Não constava na ACS',OUTRO:'Outro'};
+const ADDR_CASES=['NUMERO_ERRADO','SEM_COMPLEMENTO','COMPLEMENTO_ERRADO','NUMERO_E_COMPLEMENTO'],OTHER_CASES=['NAO_EXISTE','DUPLICADA','ERRO_MANUAL','OUTRO'];
+const TAG_TABLET='Cadastro desatualizado no Tablet ACS',TAG_NEW='Não constava na ACS';
+const hasCheck=()=>S.houses.some(h=>h.check_case);
+function checkMatch(h,f){if(!f||f==='all')return true;const c=h.check_case||'';return f==='pend'?h.check_status==='NAO_CONFERIDO':f==='ok'?c==='OK':f==='addr'?ADDR_CASES.includes(c):f==='new'?c==='NAO_CONSTAVA_ACS':OTHER_CASES.includes(c);}
+function checkChip(h){const c=h.check_case;if(!c)return '<span class="muted-hint">—</span>';if(h.check_status==='NAO_CONFERIDO')return '<span class="ck ck-pend">Não conferido</span>';
+ const cls=c==='OK'?'ck-ok':c==='NAO_CONSTAVA_ACS'?'ck-new':ADDR_CASES.includes(c)?'ck-addr':'ck-other';const tag=ADDR_CASES.includes(c)?`<small>${TAG_TABLET}</small>`:'';return `<span class="ck ${cls}">${escape(CHECK_CASES[c]||c)}</span>${tag}`;}
+function checkStats(list){const acs=list.filter(h=>h.origin==='ACS'),conf=acs.filter(h=>h.check_status==='CONFERIDO'),cnt=k=>list.filter(h=>h.check_case===k).length,addr=acs.filter(h=>ADDR_CASES.includes(h.check_case)).length;
+ return {acs:acs.length,conf:conf.length,pend:acs.length-conf.length,ok:cnt('OK'),num:cnt('NUMERO_ERRADO'),semc:cnt('SEM_COMPLEMENTO'),cerr:cnt('COMPLEMENTO_ERRADO'),both:cnt('NUMERO_E_COMPLEMENTO'),other:list.filter(h=>OTHER_CASES.includes(h.check_case)).length,nova:cnt('NAO_CONSTAVA_ACS'),addr,pct:conf.length?addr*100/conf.length:0};}
+const pctTxt=v=>(Math.round(v*10)/10).toLocaleString('pt-BR')+'%';
+function renderCheckPanel(list){const st=$('#checkStats'),tb=$('#checkRows');if(!st)return;
+ if(!hasCheck()){st.innerHTML='<p class="muted-hint">A conferência aparece depois que o Apps Script for atualizado para a versão 1.4 (execute configurarBica para classificar as casas).</p>';tb.innerHTML='';return;}
+ const t=checkStats(list);
+ st.innerHTML=`<div class="stat"><span>Casas do tablet ACS</span><strong>${fmtNum(t.acs)}</strong><small>${fmtNum(t.conf)} conferidas (${pctTxt(t.acs?t.conf*100/t.acs:0)}) · ${fmtNum(t.pend)} não conferidas ainda</small></div><div class="stat warn"><span>Nº ou complemento errado/faltante</span><strong>${fmtNum(t.addr)}</strong><small>${pctTxt(t.pct)} das conferidas · nº errado ${t.num} · sem compl. ${t.semc} · compl. errado ${t.cerr} · ambos ${t.both}</small></div><div class="stat"><span>Não existe / duplicada / outros</span><strong>${fmtNum(t.other)}</strong><small>Casos marcados na conferência</small></div><div class="stat"><span>Não constavam na ACS</span><strong>${fmtNum(t.nova)}</strong><small>Casas incluídas em campo depois da importação</small></div>`;
+ const by=$('#checkGroup').value,key=h=>by==='acs'?(acsName(h.acs_id)||'(sem ACS)'):streetName(h.street_id);$('#checkGroupHead').textContent=by==='acs'?'ACS responsável':'Rua';
+ const groups={};list.forEach(h=>{(groups[key(h)]=groups[key(h)]||[]).push(h);});tb.innerHTML='';
+ const line=(name,g,bold)=>{const x=checkStats(g),tr=el('tr');tr.innerHTML=`<td>${bold?'<b>':''}${escape(name)}${bold?'</b>':''}</td><td>${x.acs}</td><td>${x.conf}${x.pend?`<small>${x.pend} pendente(s)</small>`:''}</td><td>${x.num||'—'}</td><td>${x.semc||'—'}</td><td>${x.cerr||'—'}</td><td>${x.both||'—'}</td><td>${x.other||'—'}</td><td>${x.nova||'—'}</td><td><b>${x.conf?pctTxt(x.pct):'—'}</b>${x.addr?`<small>${x.addr} casa(s)</small>`:''}</td>`;tb.append(tr);};
+ Object.keys(groups).sort((a,b)=>a.localeCompare(b,'pt-BR')).forEach(k=>line(k,groups[k]));if(Object.keys(groups).length>1)line('Total',list,true);if(!list.length)tb.innerHTML='<tr><td colspan="10">Nenhuma casa neste filtro.</td></tr>';}
+function checkTableRows(list){const SIT=STATUS_LABEL,num=n=>{const m=String(n).match(/\d+/);return m?Number(m[0]):1e9;};
+ return list.slice().sort((a,b)=>(acsName(a.acs_id)||'~').localeCompare(acsName(b.acs_id)||'~','pt-BR')||streetName(a.street_id).localeCompare(streetName(b.street_id),'pt-BR')||num(a.number)-num(b.number)||String(a.complement).localeCompare(String(b.complement),'pt-BR')).map(h=>{const b=houseBlock(h);return [acsName(h.acs_id)||'(sem ACS)',teamName(h.team_id)||'',streetName(h.street_id),h.number,h.complement||'',`${streetName(h.street_id)}, nº ${h.number}${h.complement?' · '+h.complement:''}`,h.origin==='ACS'?h.acs_number:'—',h.origin==='ACS'?(h.acs_complement||'(vazio)'):'—',h.origin==='ACS'?'Tablet da ACS':TAG_NEW,h.check_status==='CONFERIDO'?'Conferido':'Não conferido ainda',CHECK_CASES[h.check_case]||h.check_case||'',ADDR_CASES.includes(h.check_case)?TAG_TABLET:h.check_case==='NAO_CONSTAVA_ACS'?TAG_NEW:'',h.check_note||'',h.checked_at?fmtDate(h.checked_at):'',h.checked_by||'',SIT[b?.status||'PENDENTE'],b?.visits||0,h.check_log||'',h.id];});}
+const CHECK_HEAD=['ACS responsável','Equipe','Rua','Número','Complemento','Endereço completo','Nº no tablet da ACS','Complemento no tablet da ACS','Origem do cadastro','Status do cadastro','Caso','Etiqueta','Observação','Data da análise','Analisado por','Situação na pesquisa','Tentativas de visita','Histórico de alterações','Código do domicílio'];
+function downloadCheckCsv(){if(!hasCheck()){notify('Atualize o Apps Script para a versão 1.4 para ter a conferência.');return;}const sid=$('#houseStreetFilter').value,tid=$('#houseTeamFilter').value,aid=$('#houseAcsFilter').value,cf=$('#houseCheckFilter').value;
+ const list=S.houses.filter(h=>(sid==='all'||h.street_id===sid)&&(tid==='all'||(tid==='none'?!h.team_id:h.team_id===tid))&&(aid==='all'||(aid==='none'?!h.acs_id:h.acs_id===aid))&&checkMatch(h,cf));
+ const esc=v=>{const t=String(v??'');return /[";\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
+ const csv='\ufeff'+[CHECK_HEAD,...checkTableRows(list)].map(r=>r.map(esc).join(';')).join('\r\n');
+ downloadFile('conferencia-cadastro-acs-'+new Date().toISOString().slice(0,10)+'.csv',csv,'text/csv;charset=utf-8');notify(`${list.length} casa(s) exportada(s). Abre no Excel ou no Google Planilhas.`);}
+async function exportCheckSheet(){if(String(S.serverVersion||'1.0')<'1.4'){notify('Atualize o Apps Script para a versão 1.4 para exportar para a planilha.');return;}
+ const w=window.open('about:blank','_blank');try{const r=await api('exportHouseCheck',{},{busy:'Montando a aba Conferencia_Cadastro…'});notify(`Aba Conferencia_Cadastro atualizada na planilha (${r.rows} casas).`);if(w)w.location.href=r.url;else window.open(r.url,'_blank');}catch(e){if(w)w.close();notify(e.message);}}
 function renderHouses(){
  if(!S||!uiReady)return;
  const sts=stActive();
  fillSelect('#houseStreetFilter',[['all','Todas as ruas'],...sts.map(s=>[s.id,s.name])]);
  fillSelect('#houseTeamFilter',[['all','Todas as equipes'],['none','Sem equipe'],...S.teams.slice().sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(t=>[t.id,t.name])]);
  fillSelect('#houseAcsFilter',[['all','Todas as ACS'],['none','Sem ACS'],...S.acs.slice().sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(t=>[t.id,t.name])]);
- const sid=$('#houseStreetFilter').value,tid=$('#houseTeamFilter').value,aid=$('#houseAcsFilter').value,q=canon($('#houseSearch').value);
- const list=S.houses.filter(h=>(sid==='all'||h.street_id===sid)&&(tid==='all'||(tid==='none'?!h.team_id:h.team_id===tid))&&(aid==='all'||(aid==='none'?!h.acs_id:h.acs_id===aid))&&(!q||canon(h.number+' '+h.complement).includes(q))).sort((a,b)=>streetName(a.street_id).localeCompare(streetName(b.street_id),'pt-BR')||byNumber(a,b));
+ const sid=$('#houseStreetFilter').value,tid=$('#houseTeamFilter').value,aid=$('#houseAcsFilter').value,q=canon($('#houseSearch').value),cf=$('#houseCheckFilter').value;
+ const base=S.houses.filter(h=>(sid==='all'||h.street_id===sid)&&(tid==='all'||(tid==='none'?!h.team_id:h.team_id===tid))&&(aid==='all'||(aid==='none'?!h.acs_id:h.acs_id===aid)));
+ renderCheckPanel(base);
+ const list=S.houses.filter(h=>checkMatch(h,cf)&&(sid==='all'||h.street_id===sid)&&(tid==='all'||(tid==='none'?!h.team_id:h.team_id===tid))&&(aid==='all'||(aid==='none'?!h.acs_id:h.acs_id===aid))&&(!q||canon(h.number+' '+h.complement).includes(q))).sort((a,b)=>streetName(a.street_id).localeCompare(streetName(b.street_id),'pt-BR')||byNumber(a,b));
  const informed=list.filter(h=>h.declared!=null),sumInf=informed.reduce((a,h)=>a+Number(h.declared),0),est=Math.round(sumInf+avg()*(list.length-informed.length));
  const scopeStreets=sid==='all'?sts:sts.filter(s=>s.id===sid),streetTotal=scopeStreets.reduce((a,s)=>a+streetResidents(s.id).estimate,0);
  $('#houseStats').innerHTML=`<div class="stat"><span>Casas no filtro</span><strong>${fmtNum(list.length)}</strong><small>De ${fmtNum(S.houses.length)} casas cadastradas</small></div><div class="stat"><span>Moradores informados</span><strong>${fmtNum(sumInf)}</strong><small>Em ${informed.length} casa(s) com número informado</small></div><div class="stat"><span>Moradores estimados (filtro)</span><strong>${fmtNum(est)}</strong><small>${fmtAvg()} por casa sem informação</small></div><div class="stat"><span>Total estimado ${sid==='all'?'(todas as ruas)':'na rua'}</span><strong>${fmtNum(streetTotal)}</strong><small>Inclui casas previstas ainda não cadastradas</small></div>`;
@@ -1700,8 +1746,8 @@ function renderHouses(){
  if(!scopeStreets.length)tb.innerHTML='<tr><td colspan="6">Nenhuma rua cadastrada.</td></tr>';
  $('#houseCountTag').textContent=`${list.length} casa(s)`;$('#houseListTitle').textContent=sid==='all'?'Casas cadastradas':`Casas · ${streetName(sid)}`;
  const rows=$('#houseRows');rows.innerHTML='';
- for(const h of list){const b=houseBlock(h),status=b?.status||'PENDENTE',tr=el('tr');tr.innerHTML=`<td><b>${escape(streetName(h.street_id))}, nº ${escape(h.number)}</b><small>${escape(h.complement||'')}${h.complement?' · ':''}${escape(h.id)}</small></td><td>${h.declared!=null?`<b>${h.declared}</b>`:`—<small>≈ ${fmtAvg()} (estimativa)</small>`}</td><td>${escape(teamName(h.team_id)||'—')}</td><td>${escape(acsName(h.acs_id)||'—')}</td><td><span class="pill ${STATUS_PILL[status]}">${escape(STATUS_LABEL[status])}</span>${b?.interviews?`<small>${b.interviews} entrevista(s)</small>`:''}</td><td>${b?.visits||0}</td><td>${h.lat!=null?'✓ confirmado':'—'}</td><td></td>`;const btn=el('button','btn small','Editar');btn.type='button';btn.onclick=()=>openHouseModal(h);tr.lastElementChild.append(btn);rows.append(tr);}
- if(!list.length)rows.innerHTML='<tr><td colspan="8">Nenhuma casa neste filtro. Use “+ Cadastrar domicílio” ou registre uma visita na coleta.</td></tr>';
+ for(const h of list){const b=houseBlock(h),status=b?.status||'PENDENTE',tr=el('tr');tr.innerHTML=`<td><b>${escape(streetName(h.street_id))}, nº ${escape(h.number)}</b><small>${escape(h.complement||'')}${h.complement?' · ':''}${escape(h.id)}</small></td><td>${h.declared!=null?`<b>${h.declared}</b>`:`—<small>≈ ${fmtAvg()} (estimativa)</small>`}</td><td>${escape(teamName(h.team_id)||'—')}</td><td>${escape(acsName(h.acs_id)||'—')}</td><td>${checkChip(h)}</td><td><span class="pill ${STATUS_PILL[status]}">${escape(STATUS_LABEL[status])}</span>${b?.interviews?`<small>${b.interviews} entrevista(s)</small>`:''}</td><td>${b?.visits||0}</td><td>${h.lat!=null?'✓ confirmado':'—'}</td><td></td>`;const btn=el('button','btn small','Editar');btn.type='button';btn.onclick=()=>openHouseModal(h);tr.lastElementChild.append(btn);rows.append(tr);}
+ if(!list.length)rows.innerHTML='<tr><td colspan="9">Nenhuma casa neste filtro. Use “+ Cadastrar domicílio” ou registre uma visita na coleta.</td></tr>';
  $('#acsChips').innerHTML=S.acs.length?S.acs.slice().sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(a=>`<span class="chip">${escape(a.name)} · ${S.houses.filter(h=>h.acs_id===a.id).length} casa(s)</span>`).join(''):'<span class="muted-hint">Nenhuma ACS cadastrada.</span>';
  $('#teamChips').innerHTML=S.teams.length?S.teams.slice().sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(t=>`<span class="chip">${escape(t.name)} · ${S.houses.filter(h=>h.team_id===t.id).length} casa(s)</span>`).join(''):'<span class="muted-hint">Nenhuma equipe cadastrada.</span>';
  if(isCoord())renderRegistryAdmin();
@@ -1729,6 +1775,13 @@ function openHouseModal(h,presetStreet,opts={}){
  let clearGeo=null;
  if(coord&&!creating){const sug=el('button','btn text','Sugerir pelo endereço');sug.type='button';sug.onclick=async()=>{sug.disabled=true;try{const r=await api('geoSuggest',{house_id:h.id});lat.value=Number(r.lat).toFixed(6);lon.value=Number(r.lon).toFixed(6);geoInfo.textContent=`Sugestão: ${r.address} (${r.precision}). Confirme no local antes de salvar.`;}catch(e){geoInfo.textContent=e.message;}finally{sug.disabled=false;}};gr.append(sug);if(h.lat!=null){const lab=el('label','map-check');clearGeo=el('input');clearGeo.type='checkbox';lab.append(clearGeo,el('span',null,' Remover localização confirmada'));geoBox.append(lab);}}
  body.append(geoBox);
+ let ckSel=null,ckNote=null;
+ if(!creating&&h.check_case){const box=el('div','check-box'),tablet=h.origin==='ACS'?`nº ${h.acs_number||'—'}${h.acs_complement?' · '+h.acs_complement:' · sem complemento'}`:'—';
+  box.innerHTML=`<h3>Conferência do cadastro</h3><p class="small">${h.origin==='ACS'?`Veio do tablet da ACS como <b>${escape(tablet)}</b>.`:'<b>Não constava na ACS</b>: casa incluída em campo.'} Situação: ${checkChip(h)}</p>`;
+  ckSel=el('select');for(const [k,l] of Object.entries(CHECK_CASES))if(k!=='NAO_CONSTAVA_ACS'||h.origin!=='ACS')ckSel.append(new Option(l,k));ckSel.value=h.check_case;ckNote=el('input');ckNote.maxLength=300;ckNote.value=h.check_note||'';ckNote.placeholder='Ex.: casa demolida, número na fachada é outro…';
+  const g=el('div','grid2');g.append(modalField('Caso',ckSel,'Corrigir número/complemento acima já classifica sozinho. Use aqui para “Não existe essa casa”, “Erro de cadastro manual”, “Outro” ou para confirmar sem erro.'),modalField('Observação da conferência',ckNote));box.append(g);
+  if(h.check_log){const d=el('details'),sm=el('summary',null,'Histórico desta casa'),pre=el('div','check-log');pre.textContent=h.check_log;d.append(sm,pre);box.append(d);}
+  body.append(box);}
  if(!creating){const b=houseBlock(h),ps=S._personsByHouse[h.id]||[],info=el('div','house-info');info.innerHTML=`<div class="kv"><span>SITUAÇÃO NO BLOCO ATIVO</span><strong>${escape(STATUS_LABEL[b?.status||'PENDENTE'])}</strong></div><div class="kv"><span>TENTATIVAS / ENTREVISTAS</span><strong>${b?.visits||0} / ${b?.interviews||0}</strong></div><div class="kv"><span>PESSOAS REGISTRADAS</span><strong>${ps.length}</strong></div><div class="kv"><span>ÚLTIMA ATUALIZAÇÃO</span><strong>${escape(fmtDate(h.updated_at))}</strong></div>`;body.append(info);}
  const actions=el('div','action-line'),save=el('button','btn primary',creating?'Cadastrar domicílio':'Salvar alterações'),cancel=el('button','btn','Cancelar');save.type='button';cancel.type='button';actions.append(save,cancel);body.append(actions);
  cancel.onclick=closeModal;
@@ -1738,6 +1791,7 @@ function openHouseModal(h,presetStreet,opts={}){
   const payload={declared:raw===''?'':Number(raw),team_id:tp.value(),acs_id:ap.value()};
   if(lat.value.trim()&&!(clearGeo&&clearGeo.checked)&&(creating||String(lat.value)!==String(h.lat??'')||String(lon.value)!==String(h.lon??''))){payload.lat=lat.value.trim();payload.lon=lon.value.trim();}
   if(clearGeo&&clearGeo.checked)payload.clearGeo=true;
+  if(ckSel&&ckSel.value!==h.check_case)payload.check_case=ckSel.value;if(ckNote&&ckNote.value.trim()!==(h.check_note||''))payload.check_note=ckNote.value.trim();
   if(creating){if(!num.value.trim()){notify('Informe o número da casa ou S/N.');return;}Object.assign(payload,{street_id:sSel.value,number:num.value.trim(),complement:comp.value.trim()});}
   else{payload.id=h.id;if(!num.value.trim()){notify('Informe o número da casa ou S/N.');return;}Object.assign(payload,{number:num.value.trim(),complement:comp.value.trim()});if(coord)payload.street_id=sSel.value;}
   const addrChanged=!creating&&(payload.number!==h.number||payload.complement!==(h.complement||''));if(addrChanged&&!confirm(`Corrigir o endereço para nº ${payload.number}${payload.complement?' · '+payload.complement:''}? As entrevistas e tentativas continuam ligadas a esta casa.`))return;
@@ -1963,7 +2017,8 @@ function wire(){
  $('#residentsTotal').oninput=renderPeople;
  $('#submitVisit').onclick=saveVisit;$('#closedHouse').onclick=closedHouse;
  // domicílios
- for(const id of ['houseStreetFilter','houseTeamFilter','houseAcsFilter'])$('#'+id).onchange=renderHouses;$('#houseSearch').oninput=renderHouses;
+ for(const id of ['houseStreetFilter','houseTeamFilter','houseAcsFilter','houseCheckFilter','checkGroup'])$('#'+id).onchange=renderHouses;
+ $('#checkCsvBtn').onclick=downloadCheckCsv;$('#checkExportBtn').onclick=exportCheckSheet;$('#houseSearch').oninput=renderHouses;
  $('#newHouseBtn').onclick=()=>openHouseModal(null);
  $('#addAcsBtn').onclick=()=>addRegistryFrom('newAcsName','ACS');$('#addTeamBtn').onclick=()=>addRegistryFrom('newTeamName','EQUIPE');
  $('#newAcsName').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addRegistryFrom('newAcsName','ACS');}};$('#newTeamName').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addRegistryFrom('newTeamName','EQUIPE');}};

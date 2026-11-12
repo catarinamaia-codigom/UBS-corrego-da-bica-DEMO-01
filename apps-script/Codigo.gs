@@ -215,7 +215,7 @@ function configurarBica() {
     BICA_DB_CACHE = ss; BICA_HEAD_CACHE = {}; BICA_ROWS_CACHE = {};
     const schema = bicaEnsureSchema_(ss);
     const now = bicaNow_();
-    const defaults = {ETAPA: 'PREPARACAO', MEDIA_MORADORES_CASA: String(BICA_MEDIA_MORADORES_PADRAO)};
+    const defaults = {ETAPA: 'PREPARACAO', MEDIA_MORADORES_CASA: String(BICA_MEDIA_MORADORES_PADRAO), CORTE_CADASTRO_ACS: BICA_CORTE_CADASTRO_ACS};
     Object.keys(defaults).forEach(k => { if (!bicaRows_('Parametros').some(r => String(r.chave) === k)) bicaAppend_('Parametros', {chave: k, valor: defaults[k], atualizado_em: now}); });
     bicaSetParam_('VERSAO_BANCO', '2.0');
     if (!bicaRows_('Blocos').length) bicaAppend_('Blocos', {id: 'BL-001', nome: 'Bloco 01 · Acesso e cuidado no território', versao: 1, config_json: JSON.stringify(bicaDefaultConfig_()), ativo: true, criado_em: now, atualizado_em: now});
@@ -241,6 +241,8 @@ function configurarBica() {
       {item: 'TREINAMENTO', descricao: 'Com ETAPA = PREPARACAO as entrevistas recebem origem TREINAMENTO. Use OPERACAO somente após validar o termo de consentimento.'},
       {item: 'MAPA', descricao: 'O mapa mostra apenas casas com localização confirmada. Polígonos são exploratórios; não são limites oficiais.'}
     ]);
+    const conf = bicaMigrateHouseCheck_();
+    if (conf) console.log('Conferência do cadastro: ' + conf + ' casa(s) classificadas (tablet ACS × incluídas em campo).');
     bicaRewriteDictionary_();
     bicaWriteSummary_();
     SpreadsheetApp.flush();
@@ -380,6 +382,7 @@ function bicaRoute_(req) {
   switch (op) {
     case 'bootstrap': return {state: bicaSnapshot_(actor)};
     case 'saveVisit': return withState(bicaSaveVisit_(actor, data));
+    case 'exportHouseCheck': coord(); return withState(bicaExportHouseCheck_(actor));
     case 'saveHouse': return withState(bicaSaveHouse_(actor, data));
     case 'addStreet': return withState(bicaAddStreet_(actor, data));
     case 'addRegistry': return withState(bicaAddRegistry_(actor, data));
@@ -503,7 +506,8 @@ function bicaSnapshot_(actor) {
     houseById[String(h.id)] = h;
     const st = bicaCanonStreet_(h.rua_id, streetsRaw), confirmed = String(h.geo_status) === 'confirmado';
     streetOf[String(h.id)] = st ? st.id : String(h.rua_id);
-    return {id: String(h.id), street_id: st ? st.id : String(h.rua_id), number: bicaStr_(h.numero), complement: bicaStr_(h.complemento), declared: bicaNum_(h.moradores_declarados), team_id: bicaResolveRegistry_('EQUIPE', h.equipe_id, merges), acs_id: bicaResolveRegistry_('ACS', h.acs_id, merges), lat: confirmed ? bicaNum_(h.latitude) : null, lon: confirmed ? bicaNum_(h.longitude) : null, geo_status: bicaStr_(h.geo_status) || 'nao_localizado', created_at: bicaStr_(h.criado_em), updated_at: bicaStr_(h.atualizado_em), blocks: summary.houses[String(h.id)] || {}};
+    const ck = bicaHouseCheck_(h);
+    return {origin: ck.origin, acs_number: ck.acsNumber, acs_complement: ck.acsComp, check_status: ck.status, check_case: ck.caso, check_note: bicaStr_(h.conferencia_obs), checked_at: bicaStr_(h.conferido_em), checked_by: bicaStr_(h.conferido_por), check_log: bicaStr_(h.conferencia_historico), id: String(h.id), street_id: st ? st.id : String(h.rua_id), number: bicaStr_(h.numero), complement: bicaStr_(h.complemento), declared: bicaNum_(h.moradores_declarados), team_id: bicaResolveRegistry_('EQUIPE', h.equipe_id, merges), acs_id: bicaResolveRegistry_('ACS', h.acs_id, merges), lat: confirmed ? bicaNum_(h.latitude) : null, lon: confirmed ? bicaNum_(h.longitude) : null, geo_status: bicaStr_(h.geo_status) || 'nao_localizado', created_at: bicaStr_(h.criado_em), updated_at: bicaStr_(h.atualizado_em), blocks: summary.houses[String(h.id)] || {}};
   });
   const persons = personsRaw.map(p => { personById[String(p.id)] = p; return {id: String(p.id), house_id: String(p.domicilio_id), sex: bicaStr_(p.sexo), age: bicaNum_(p.idade_referida), relationship: bicaStr_(p.parentesco), name: coord ? bicaStr_(p.nome_opcional) : '', blocks: summary.persons[String(p.id)] || {}}; });
   const textQ = bicaQuestions_().filter(q => q.type === 'text').map(q => q.id);
@@ -651,12 +655,14 @@ function bicaSaveVisit_(actor, a) {
     const now = bicaNow_();
     if (!house) {
       house = {id: bicaId_('DOM'), rua_id: street.id, numero: number, complemento: comp, moradores_declarados: declared === null ? '' : declared, equipe_id: teamId, acs_id: acsId, situacao: 'PENDENTE', latitude: '', longitude: '', geo_status: 'nao_localizado', criado_em: now, atualizado_em: now, criado_por: actor.id, atualizado_por: actor.id};
+      Object.assign(house, bicaNewHouseCheck_(actor, now, 'Casa incluída na visita'));
       bicaAppend_('Domicilios', house);
     } else {
       const patch = {atualizado_em: now, atualizado_por: actor.id};
       if (declared !== null) patch.moradores_declarados = declared;
       if (teamId) patch.equipe_id = teamId;
       if (acsId) patch.acs_id = acsId;
+      Object.assign(patch, bicaVisitCheck_(house, actor, now));
       bicaSetRow_('Domicilios', 'id', house.id, patch);
       house = Object.assign({}, house, patch);
     }
@@ -726,6 +732,7 @@ function bicaSaveHouse_(actor, a) {
       bicaAssert_(number, 'Informe o número da casa ou S/N.');
       bicaAssert_(!bicaFindHouse_(street.id, number, comp, houses, streets), 'Esta casa já está cadastrada nesta rua com o mesmo número e complemento. Use o botão Editar.');
       const row = {id: bicaId_('DOM'), rua_id: street.id, numero: number, complemento: comp, moradores_declarados: declared === null || declared === undefined ? '' : declared, equipe_id: teamId || '', acs_id: acsId || '', situacao: 'PENDENTE', latitude: geo ? geo.lat : '', longitude: geo ? geo.lon : '', geo_status: geo ? 'confirmado' : 'nao_localizado', criado_em: now, atualizado_em: now, criado_por: actor.id, atualizado_por: actor.id};
+      Object.assign(row, bicaNewHouseCheck_(actor, row.criado_em || now, 'Casa cadastrada'));
       bicaAppend_('Domicilios', row);
       bicaAudit_(actor, 'CADASTRAR_DOMICILIO', 'DOMICILIO', row.id, {rua_id: street.id, numero: number, complemento: comp, moradores: row.moradores_declarados, equipe_id: row.equipe_id, acs_id: row.acs_id});
       return {id: row.id, created: true};
@@ -753,6 +760,7 @@ function bicaSaveHouse_(actor, a) {
       bicaAssert_(!bicaFindHouse_(st.id, newNumber, newComp, houses, streets, h.id), 'Já existe outra casa com esta rua, número e complemento.');
       set('rua_id', st.id); set('numero', newNumber); set('complemento', newComp);
     }
+    Object.assign(patch, bicaEditCheck_(h, actor, now, newNumber, newComp, addressChanged, a, before, after));
     if (!Object.keys(after).length) return {id: String(h.id), unchanged: true};
     bicaSetRow_('Domicilios', 'id', h.id, patch);
     bicaAudit_(actor, 'EDITAR_DOMICILIO', 'DOMICILIO', h.id, {antes: before, depois: after});
@@ -1246,4 +1254,179 @@ function bicaBlockHistory_(actor, b, current, next, oldName, newName, version) {
   Object.keys(next.questions).forEach(id => { if (current.questions[id] !== next.questions[id]) rows.push([id, next.questions[id] ? 'ATIVADA_PERGUNTA' : 'DESATIVADA_PERGUNTA', (next.questions[id] ? 'Ativada' : 'Desativada') + ' pergunta “' + qLabel(id) + '” no ' + newName]); });
   Object.keys(next.modules).forEach(id => { if (current.modules[id] !== next.modules[id]) rows.push(['', next.modules[id] ? 'MODULO_LIGADO' : 'MODULO_DESLIGADO', 'Módulo “' + mLabel(id) + '” ' + (next.modules[id] ? 'ligado' : 'desligado') + ' no ' + newName]); });
   rows.forEach(r => bicaQHistory_(actor, edition, String(b.id), r[0], r[1], r[2], {bloco_versao: version}));
+}
+
+/* ============================== CONFERÊNCIA DO CADASTRO DAS ACS ============================== */
+
+const BICA_CASOS = {
+  PENDENTE: 'Pendente', OK: 'Confirmado sem erro', NUMERO_ERRADO: 'Número errado', SEM_COMPLEMENTO: 'Sem complemento',
+  COMPLEMENTO_ERRADO: 'Complemento errado', NUMERO_E_COMPLEMENTO: 'Número e complemento errados', NAO_EXISTE: 'Não existe essa casa',
+  DUPLICADA: 'Casa duplicada no cadastro', ERRO_MANUAL: 'Erro de cadastro manual', NAO_CONSTAVA_ACS: 'Não constava na ACS', OUTRO: 'Outro'
+};
+const BICA_CASOS_ENDERECO = ['NUMERO_ERRADO', 'SEM_COMPLEMENTO', 'COMPLEMENTO_ERRADO', 'NUMERO_E_COMPLEMENTO'];
+const BICA_TAG_TABLET = 'Cadastro desatualizado no Tablet ACS';
+const BICA_TAG_NOVA = 'Não constava na ACS';
+
+function bicaCoordIds_() {
+  if (!bicaCoordIds_.cache) bicaCoordIds_.cache = bicaRows_('Acessos').filter(r => String(r.perfil) === 'coordenacao').map(r => String(r.id));
+  return bicaCoordIds_.cache;
+}
+function bicaTime_(s) { const t = new Date(String(s || '')).getTime(); return isNaN(t) ? null : t; }
+
+/** Origem e situação de conferência de uma casa (colunas novas; casas antigas sem a coluna usam a regra de corte). */
+function bicaHouseCheck_(h) {
+  let origin = bicaStr_(h.origem_cadastro);
+  if (!origin) {
+    const t = bicaTime_(h.criado_em), cut = bicaTime_(bicaParam_('CORTE_CADASTRO_ACS') || BICA_CORTE_CADASTRO_ACS);
+    origin = t !== null && cut !== null && t < cut && bicaStr_(h.acs_id) && (!bicaStr_(h.criado_por) || bicaCoordIds_().indexOf(bicaStr_(h.criado_por)) >= 0) ? 'ACS' : 'CAMPO';
+  }
+  const acsNumber = origin === 'ACS' ? (bicaStr_(h.origem_cadastro) ? bicaStr_(h.numero_acs) : bicaStr_(h.numero)) : '';
+  const acsComp = origin === 'ACS' ? (bicaStr_(h.origem_cadastro) ? bicaStr_(h.complemento_acs) : bicaStr_(h.complemento)) : '';
+  let caso = bicaStr_(h.conferencia_caso), status = bicaStr_(h.conferencia_status);
+  if (!caso) caso = origin === 'CAMPO' ? 'NAO_CONSTAVA_ACS' : 'PENDENTE';
+  if (!status) status = origin === 'CAMPO' || caso !== 'PENDENTE' ? 'CONFERIDO' : 'NAO_CONFERIDO';
+  return {origin: origin, acsNumber: acsNumber, acsComp: acsComp, caso: caso, status: status};
+}
+function bicaAddrCase_(acsNum, acsComp, num, comp) {
+  const n = bicaCanon_(acsNum) !== bicaCanon_(num), c = bicaCanon_(acsComp) !== bicaCanon_(comp);
+  if (n && c) return 'NUMERO_E_COMPLEMENTO';
+  if (n) return 'NUMERO_ERRADO';
+  if (c) return bicaCanon_(acsComp) === '' ? 'SEM_COMPLEMENTO' : 'COMPLEMENTO_ERRADO';
+  return 'OK';
+}
+function bicaLogLine_(actor, now, text) {
+  return Utilities.formatDate(new Date(bicaTime_(now) || Date.now()), 'America/Recife', 'dd/MM/yyyy HH:mm') + ' · ' + (actor.name || actor.id || 'Sistema') + ' · ' + text;
+}
+function bicaAppendLog_(h, line) { const old = bicaStr_(h.conferencia_historico); return (old ? old + '\n' : '') + line; }
+
+function bicaNewHouseCheck_(actor, now, what) {
+  return {origem_cadastro: 'CAMPO', numero_acs: '', complemento_acs: '', conferencia_status: 'CONFERIDO', conferencia_caso: 'NAO_CONSTAVA_ACS', conferencia_obs: '', conferido_em: now, conferido_por: actor.name || actor.id, conferencia_historico: bicaLogLine_(actor, now, what + ' · ' + BICA_TAG_NOVA)};
+}
+function bicaFixedCols_(h, ck) {
+  // grava origem e endereço do tablet na primeira vez que a casa é tocada depois da atualização
+  return bicaStr_(h.origem_cadastro) ? {} : {origem_cadastro: ck.origin, numero_acs: ck.acsNumber, complemento_acs: ck.acsComp};
+}
+/** Visita registrada numa casa do tablet ainda não conferida: confirma o endereço. */
+function bicaVisitCheck_(h, actor, now) {
+  const ck = bicaHouseCheck_(h), patch = bicaFixedCols_(h, ck);
+  if (ck.origin === 'ACS' && ck.status !== 'CONFERIDO') {
+    Object.assign(patch, {conferencia_status: 'CONFERIDO', conferencia_caso: bicaAddrCase_(ck.acsNumber, ck.acsComp, h.numero, h.complemento), conferido_em: now, conferido_por: actor.name || actor.id});
+    patch.conferencia_historico = bicaAppendLog_(h, bicaLogLine_(actor, now, 'Endereço confirmado na visita'));
+  }
+  return patch;
+}
+/** Edição da casa: correção de número/complemento classifica o erro; a equipe também pode registrar o caso à mão. */
+function bicaEditCheck_(h, actor, now, newNumber, newComp, addressChanged, a, before, after) {
+  const ck = bicaHouseCheck_(h), patch = {}, lines = [];
+  const fixed = bicaFixedCols_(h, ck);
+  let caso = ck.caso, status = ck.status;
+  if (addressChanged) {
+    const desc = 'Endereço corrigido: nº ' + bicaStr_(h.numero) + (bicaStr_(h.complemento) ? ' ' + bicaStr_(h.complemento) : '') + ' → nº ' + newNumber + (newComp ? ' ' + newComp : '');
+    if (ck.origin === 'ACS') {
+      caso = bicaAddrCase_(ck.acsNumber, ck.acsComp, newNumber, newComp);
+      status = 'CONFERIDO';
+      lines.push(desc + (caso === 'OK' ? ' (igual ao tablet da ACS)' : ' · ' + BICA_TAG_TABLET + ' · ' + BICA_CASOS[caso]));
+    } else lines.push(desc);
+  }
+  if (a.check_case !== undefined && a.check_case !== null && a.check_case !== '') {
+    const want = String(a.check_case);
+    bicaAssert_(BICA_CASOS[want], 'Caso de conferência inválido.');
+    if (want !== caso) { caso = want; lines.push('Conferência: ' + BICA_CASOS[want]); }
+    status = want === 'PENDENTE' ? 'NAO_CONFERIDO' : 'CONFERIDO';
+  }
+  if (a.check_note !== undefined) {
+    const note = bicaClean_(a.check_note, 300);
+    if (note !== bicaStr_(h.conferencia_obs)) { patch.conferencia_obs = note; if (note) lines.push('Observação: ' + note); }
+  }
+  if (!lines.length && !patch.hasOwnProperty('conferencia_obs')) return {};
+  Object.assign(patch, fixed, {conferencia_caso: caso, conferencia_status: status});
+  if (lines.length) {
+    patch.conferido_em = now; patch.conferido_por = actor.name || actor.id;
+    patch.conferencia_historico = bicaAppendLog_(h, lines.map(l => bicaLogLine_(actor, now, l)).join('\n'));
+  }
+  before.conferencia_caso = ck.caso; after.conferencia_caso = caso;
+  return patch;
+}
+
+/**
+ * Executada em configurarBica: grava origem (tablet ACS × incluída em campo) e o endereço original do tablet,
+ * recuperando-o da Auditoria quando a casa já teve número/complemento corrigido. Não refaz casas já classificadas.
+ */
+function bicaMigrateHouseCheck_() {
+  const houses = bicaRows_('Domicilios').filter(h => !bicaStr_(h.origem_cadastro));
+  if (!houses.length) return 0;
+  const firstBefore = {};
+  bicaRows_('Auditoria').filter(r => String(r.acao) === 'EDITAR_DOMICILIO').sort((x, y) => String(x.momento).localeCompare(String(y.momento))).forEach(r => {
+    const d = bicaJson_(r.detalhes_json) || {}, ant = d.antes || {}, id = String(r.entidade_id), f = firstBefore[id] = firstBefore[id] || {};
+    if (ant.numero !== undefined && f.numero === undefined) f.numero = bicaStr_(ant.numero);
+    if (ant.complemento !== undefined && f.complemento === undefined) f.complemento = bicaStr_(ant.complemento);
+  });
+  const visited = {};
+  bicaRows_('Visitas').forEach(v => { visited[String(v.domicilio_id)] = true; });
+  houses.forEach(h => {
+    const ck = bicaHouseCheck_(h), id = String(h.id), f = firstBefore[id] || {}, now = bicaNow_();
+    const patch = {origem_cadastro: ck.origin};
+    if (ck.origin === 'ACS') {
+      patch.numero_acs = f.numero !== undefined ? f.numero : bicaStr_(h.numero);
+      patch.complemento_acs = f.complemento !== undefined ? f.complemento : bicaStr_(h.complemento);
+      if (!bicaStr_(h.conferencia_caso)) {
+        const caso = bicaAddrCase_(patch.numero_acs, patch.complemento_acs, h.numero, h.complemento);
+        if (caso !== 'OK' || visited[id]) {
+          Object.assign(patch, {conferencia_status: 'CONFERIDO', conferencia_caso: caso, conferido_em: bicaStr_(h.atualizado_em) || now, conferido_por: 'Atualização automática'});
+          patch.conferencia_historico = bicaLogLine_({name: 'Atualização automática'}, bicaStr_(h.atualizado_em) || now, caso === 'OK' ? 'Endereço confirmado em visita anterior' : 'Endereço já corrigido antes: nº ' + patch.numero_acs + (patch.complemento_acs ? ' ' + patch.complemento_acs : '') + ' → nº ' + bicaStr_(h.numero) + (bicaStr_(h.complemento) ? ' ' + bicaStr_(h.complemento) : '') + ' · ' + BICA_TAG_TABLET + ' · ' + BICA_CASOS[caso]);
+        } else patch.conferencia_status = 'NAO_CONFERIDO', patch.conferencia_caso = 'PENDENTE';
+      }
+    } else if (!bicaStr_(h.conferencia_caso)) {
+      Object.assign(patch, {conferencia_status: 'CONFERIDO', conferencia_caso: 'NAO_CONSTAVA_ACS', conferido_em: bicaStr_(h.criado_em) || now, conferido_por: 'Atualização automática', conferencia_historico: bicaLogLine_({name: 'Atualização automática'}, bicaStr_(h.criado_em) || now, 'Casa incluída depois da importação · ' + BICA_TAG_NOVA)});
+    }
+    bicaSetRow_('Domicilios', 'id', id, patch);
+  });
+  return houses.length;
+}
+
+/** Cria/atualiza a aba Conferencia_Cadastro, organizada para leitura: ACS → rua → número. */
+function bicaExportHouseCheck_(actor) {
+  return bicaLock_(function () {
+    const streets = bicaRows_('Ruas'), visits = bicaRows_('Visitas'), merges = bicaRows_('Fusoes_Cadastros');
+    const reg = {}; bicaRows_('ACS').forEach(r => { reg['ACS|' + r.id] = bicaStr_(r.nome); }); bicaRows_('Equipes').forEach(r => { reg['EQUIPE|' + r.id] = bicaStr_(r.nome); });
+    const regName = (t, id) => { const rid = bicaResolveRegistry_(t, id, merges); return rid ? (reg[t + '|' + rid] || rid) : ''; };
+    const tries = {}; visits.forEach(v => { tries[String(v.domicilio_id)] = (tries[String(v.domicilio_id)] || 0) + 1; });
+    const SIT = {PENDENTE: 'Pendente', CONCLUIDA: 'Concluída', PARCIAL: 'Parcial', RECUSA: 'Recusa', AUSENTE: 'Ausente'};
+    const numKey = n => { const m = String(n).match(/\d+/); return m ? Number(m[0]) : 1e9; };
+    const rows = bicaRows_('Domicilios').map(h => {
+      const st = bicaCanonStreet_(h.rua_id, streets), ck = bicaHouseCheck_(h), sn = st ? bicaStr_(st.nome) : bicaStr_(h.rua_id);
+      const acs = regName('ACS', h.acs_id);
+      return {sort: [acs || '~', sn, numKey(h.numero), bicaStr_(h.numero), bicaStr_(h.complemento)], status: ck.status, caso: ck.caso, row: [
+        acs || '(sem ACS)', regName('EQUIPE', h.equipe_id), sn, bicaStr_(h.numero), bicaStr_(h.complemento),
+        sn + ', nº ' + bicaStr_(h.numero) + (bicaStr_(h.complemento) ? ' · ' + bicaStr_(h.complemento) : ''),
+        ck.origin === 'ACS' ? ck.acsNumber : '—', ck.origin === 'ACS' ? (ck.acsComp || '(vazio)') : '—',
+        ck.origin === 'ACS' ? 'Tablet da ACS' : BICA_TAG_NOVA,
+        ck.status === 'CONFERIDO' ? 'Conferido' : 'Não conferido ainda',
+        BICA_CASOS[ck.caso] || ck.caso,
+        BICA_CASOS_ENDERECO.indexOf(ck.caso) >= 0 ? BICA_TAG_TABLET : (ck.caso === 'NAO_CONSTAVA_ACS' ? BICA_TAG_NOVA : ''),
+        bicaStr_(h.conferencia_obs),
+        bicaStr_(h.conferido_em) ? Utilities.formatDate(new Date(bicaTime_(h.conferido_em)), 'America/Recife', 'dd/MM/yyyy HH:mm') : '',
+        bicaStr_(h.conferido_por), SIT[bicaStr_(h.situacao)] || bicaStr_(h.situacao) || 'Pendente', tries[String(h.id)] || 0,
+        bicaStr_(h.conferencia_historico), String(h.id)
+      ]};
+    }).sort((x, y) => { for (let i = 0; i < x.sort.length; i++) { const a = x.sort[i], b = y.sort[i]; if (a === b) continue; return typeof a === 'number' ? a - b : String(a).localeCompare(String(b), 'pt-BR'); } return 0; });
+    const head = ['ACS responsável', 'Equipe', 'Rua', 'Número', 'Complemento', 'Endereço completo', 'Nº no tablet da ACS', 'Complemento no tablet da ACS', 'Origem do cadastro', 'Status do cadastro', 'Caso', 'Etiqueta', 'Observação', 'Data da análise', 'Analisado por', 'Situação na pesquisa', 'Tentativas de visita', 'Histórico de alterações', 'Código do domicílio'];
+    const db = bicaDb_(); let sh = db.getSheetByName('Conferencia_Cadastro');
+    if (!sh) sh = db.insertSheet('Conferencia_Cadastro'); else { try { const f = sh.getFilter(); if (f) f.remove(); } catch (e) {} sh.clear(); }
+    const data = [head].concat(rows.map(r => r.row));
+    sh.getRange(1, 1, data.length, head.length).setValues(data);
+    try {
+      sh.getRange(1, 1, 1, head.length).setBackground('#145da4').setFontColor('#ffffff').setFontWeight('bold').setWrap(true);
+      sh.setFrozenRows(1); sh.setFrozenColumns(1);
+      [150, 90, 210, 70, 120, 260, 90, 120, 140, 130, 190, 230, 200, 120, 130, 110, 80, 380, 150].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+      if (rows.length) {
+        const color = r => r.status !== 'CONFERIDO' ? '#f3f4f4' : r.caso === 'OK' ? '#e6f4ec' : r.caso === 'NAO_CONSTAVA_ACS' ? '#e8f0fb' : BICA_CASOS_ENDERECO.indexOf(r.caso) >= 0 ? '#fff1d6' : '#fde4e1';
+        sh.getRange(2, 10, rows.length, 3).setBackgrounds(rows.map(r => { const c = color(r); return [c, c, c]; }));
+        sh.getRange(2, 18, rows.length, 1).setWrap(true);
+        sh.getRange(1, 1, data.length, head.length).createFilter();
+      }
+    } catch (e) { /* formatação é opcional */ }
+    bicaAudit_(actor, 'EXPORTAR_CONFERENCIA', 'DOMICILIO', '', {linhas: rows.length});
+    return {rows: rows.length, url: db.getUrl() + '#gid=' + sh.getSheetId()};
+  });
 }
