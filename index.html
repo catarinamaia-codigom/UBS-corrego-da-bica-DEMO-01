@@ -925,6 +925,16 @@ a.btn{text-decoration:none}
 .fb-text{white-space:pre-wrap;max-width:420px}
 .qcols.many{grid-auto-columns:minmax(150px,1fr)}
 @media(max-width:560px){.qcols{gap:6px}.qcols.many{grid-auto-columns:minmax(100px,1fr)}.qfield input,.qfield select{font-size:11px;padding:6px 4px;min-height:32px}.qopt{font-size:11px;padding:6px;gap:5px}.qcard{padding:12px 9px}.qcol{padding:6px}.chip-opt{padding:8px 11px}}
+
+/* barra de conexão (modo offline) */
+.netbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;padding:7px max(14px,env(safe-area-inset-left)) calc(7px + env(safe-area-inset-bottom));font-size:11.5px;line-height:1.45;color:#fff;background:#1f6b55;box-shadow:0 -4px 18px #123f5026}
+.netbar.off{background:#8a5a12}.netbar.warn{background:#9b3b2c}
+.netbar .dot{width:8px;height:8px;border-radius:50%;background:#8ef0c4;flex-shrink:0}.netbar.off .dot{background:#ffd27a}.netbar.warn .dot{background:#ffb4a6}
+.netbar .linkbtn{color:#fff;text-decoration:underline;font-weight:700;padding:0;font-size:inherit}
+body.has-netbar{padding-bottom:64px}body.has-netbar .toast{bottom:70px}
+.pill.pending-sync{background:#fff4d9;color:#8e6427;border:1px solid #ecd9a9}
+@media(max-width:860px){.netbar{font-size:11px;padding-top:6px}body.has-netbar{padding-bottom:84px}body.has-netbar .toast{bottom:88px;left:12px;right:12px;max-width:none}}
+@media print{.netbar{display:none!important}body.has-netbar{padding-bottom:0}}
 </style></head><body>
 <div id="loginScreen" class="login-screen">
  <div class="login-card card pad">
@@ -1050,7 +1060,7 @@ a.btn{text-decoration:none}
 <p class="footer">USF Mais Córrego da Bica · Pesquisa territorial · os dados são gravados na planilha da pesquisa pelo Google Apps Script.</p></main></div></div>
 <div id="modal" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal card pad"><div class="subhead"><h2 id="modalTitle">—</h2><button class="btn text" id="modalClose" type="button" aria-label="Fechar">✕</button></div><div id="modalBody"></div></div></div>
 <div id="busy" class="busy hide" role="status"><span class="spinner"></span><span id="busyText">Sincronizando…</span></div>
-<div id="toast" class="toast hide" role="status" aria-live="polite"></div><div id="pdfPrintArea" aria-hidden="true"></div>
+<div id="netBar" class="netbar hide" role="status" aria-live="polite"></div><div id="toast" class="toast hide" role="status" aria-live="polite"></div><div id="pdfPrintArea" aria-hidden="true"></div>
 <script>
 /* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
@@ -1112,16 +1122,18 @@ const inAppsScript=()=>!!(window.google&&google.script&&google.script.run);
 const apiUrl=()=>String(BICA_API_URL||store.get('bica_api_url')||'').trim();
 function setBusy(on,text){busyCount=Math.max(0,busyCount+(on?1:-1));$('#busy').classList.toggle('hide',busyCount===0);if(on&&text)$('#busyText').textContent=text;}
 async function rawCall(req,urlOverride){
- if(inAppsScript())return new Promise((resolve,reject)=>{google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(new Error(e&&e.message||String(e)))).bicaApi(req);});
+ if(inAppsScript())return new Promise((resolve,reject)=>{google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>{const m=e&&e.message||String(e),x=new Error(m);if(/network|http 0|connection|conex/i.test(m)){x.network=true;x.message='Sem conexão com o servidor. Verifique a internet e tente novamente.';}reject(x);}).bicaApi(req);});
  const url=urlOverride||apiUrl();
  if(!url)throw new Error('Servidor não configurado. Abra “Configuração do servidor” e informe a URL /exec do Apps Script.');
  let res;
  try{res=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(req),redirect:'follow',cache:'no-store'});}
- catch(_){throw new Error('Sem conexão com o servidor. Verifique a internet e tente novamente.');}
- const text=await res.text();
- try{return JSON.parse(text);}catch(_){throw new Error('Resposta inesperada do servidor. Confira se a implantação do Apps Script está com acesso “Qualquer pessoa” e se a URL termina em /exec.');}
+ catch(_){const x=new Error('Sem conexão com o servidor. Verifique a internet e tente novamente.');x.network=true;netOk=false;updateNetBar();throw x;}
+ let text;try{text=await res.text();}catch(_){const x=new Error('A conexão caiu durante a resposta do servidor. Tente novamente.');x.network=true;throw x;}
+ netOk=true;
+ try{return JSON.parse(text);}catch(_){if(res.status>=500||/<html/i.test(text.slice(0,300))&&!res.ok){const x=new Error('O servidor não respondeu corretamente. Tente de novo em instantes.');x.transient=true;throw x;}throw new Error('Resposta inesperada do servidor. Confira se a implantação do Apps Script está com acesso “Qualquer pessoa” e se a URL termina em /exec.');}
 }
 async function api(op,data,opts={}){
+ if(navigator.onLine===false&&op!=='login'&&op!=='bootstrap'){const x=new Error('Sem internet: esta ação precisa de conexão. As visitas continuam funcionando e ficam guardadas no aparelho.');x.network=true;throw x;}
  setBusy(true,opts.busy||'Sincronizando com a planilha…');
  try{
   const res=await rawCall({op,data:data||{},token:session?.token||''});
@@ -1132,25 +1144,131 @@ async function api(op,data,opts={}){
  }finally{setBusy(false);}
 }
 
+/* ============================== MODO OFFLINE ============================== */
+// Fila de envio, cópia dos últimos dados e login offline. Nada sai da fila antes de o servidor confirmar.
+const memKV={};
+const kv={p:null,
+ open(){if(this.p)return this.p;this.p=new Promise(res=>{try{if(!window.indexedDB)return res(null);const r=indexedDB.open('bica-offline',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>res(null);r.onblocked=()=>res(null);setTimeout(()=>res(null),8000);}catch(_){res(null);}});return this.p;},
+ async idbGet(k){const db=await this.open();if(!db)return null;return new Promise(res=>{try{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result===undefined?null:q.result);q.onerror=()=>res(null);}catch(_){res(null);}});},
+ async idbSet(k,v){const db=await this.open();if(!db)return false;return new Promise(res=>{try{const tx=db.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>res(false);tx.onabort=()=>res(false);}catch(_){res(false);}});},
+ lsGet(k){try{const raw=localStorage.getItem('bica_kv_'+k);return raw?JSON.parse(raw):null;}catch(_){return null;}},
+ lsSet(k,v){try{localStorage.setItem('bica_kv_'+k,JSON.stringify(v));return true;}catch(_){return false;}},
+ // mirror=true: grava no IndexedDB E no localStorage (fila de visitas); senão só IndexedDB (cópia dos dados)
+ async get(k,mirror){const a=await this.idbGet(k);if(!mirror)return a!==null?a:(memKV[k]??null);const b=this.lsGet(k);const best=[a,b,memKV[k]].filter(Boolean).sort((x,y)=>(y.ts||0)-(x.ts||0))[0];return best||null;},
+ async set(k,v,mirror){memKV[k]=v;const okIdb=await this.idbSet(k,v);const okLs=mirror?this.lsSet(k,v):false;if(!okIdb&&!okLs)throw new Error('O aparelho não conseguiu guardar os dados (memória cheia ou janela anônima).');}};
+let queue=[],netOk=navigator.onLine!==false,flushing=null,needLogin=false,offlineMode=false,softRender=false,draftTimer=0;
+const TRANSIENT=/lock|bloqueio|timed? ?out|tempo (limite|máximo|esgotado)|too many|muitas vezes|unavailable|indispon|internal error|erro interno|ocupad|quota|cota|try again|tente novamente em/i;
+const isOnline=()=>navigator.onLine!==false&&netOk;
+const fmtDay=d=>{const x=new Date(d);return isNaN(x)?'—':x.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',timeZone:'America/Recife'})+' às '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Recife'});};
+const fmtDH=d=>{const x=new Date(d);return isNaN(x)?'—':'dia '+x.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',timeZone:'America/Recife'})+' | hora '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Recife'});};
+const myQueue=()=>session&&session.user?queue.filter(i=>i.user_id===session.user.id):[];
+async function loadQueue(){try{const q=await kv.get('queue',true);if(q&&Array.isArray(q.items))queue=q.items.map(i=>Object.assign(i,{hold:false}));}catch(_){}updateNetBar();}
+async function saveQueue(){await kv.set('queue',{ts:Date.now(),items:queue},true);updateNetBar();}
+function pendingKeys(){const set=new Set();for(const i of myQueue())if(i.payload.block_id===activeBlock)set.add(i.payload.street_id+'|'+canon(i.payload.number)+'|'+canon(i.payload.complement));return set;}
+async function flushQueue(onlyId){
+ while(flushing){await flushing;if(!onlyId)return {sent:[],errors:[],network:false,auth:false};}
+ const job=(async()=>{
+  const out={sent:[],errors:[],network:false,auth:false};
+  if(!session||!session.token||session.expires<=Date.now()){if(myQueue().length)needLogin=true;out.auth=true;updateNetBar();return out;}
+  let lastState=null;
+  for(const item of queue.filter(i=>i.user_id===session.user.id&&(onlyId?i.id===onlyId:(i.status!=='error'&&!i.hold)))){
+   let res;
+   try{res=await rawCall({op:'saveVisit',data:item.payload,token:session.token});}catch(e){if(e.network||e.transient){out.network=true;break;}res={ok:false,error:e.message};}
+   if(res&&res.ok===true){queue=queue.filter(x=>x.id!==item.id);await saveQueue();out.sent.push({item,data:res.data||{}});if(!onlyId)sentThisSession+=(res.data&&res.data.interviews)||0;if(res.data&&res.data.state)lastState=res.data.state;continue;}
+   const msg=(res&&res.error)||'Erro desconhecido no servidor.';
+   if(/entre novamente/i.test(msg)){needLogin=true;out.auth=true;break;}
+   if(TRANSIENT.test(msg)){out.network=true;break;}
+   item.status='error';item.error=msg;item.tries=(item.tries||0)+1;await saveQueue();out.errors.push({item,msg});
+  }
+  if(lastState){softRender=true;try{applyState(lastState);}finally{softRender=false;}offlineMode=false;}
+  updateNetBar();return out;})();
+ flushing=job;try{return await job;}finally{if(flushing===job)flushing=null;}
+}
+async function backgroundSync(full){
+ if(!session||!uiReady||!isOnline())return;
+ if((full||offlineMode)&&session.token&&session.expires>Date.now()){try{const res=await rawCall({op:'bootstrap',data:{},token:session.token});netOk=true;if(res&&res.ok&&res.data&&res.data.state){softRender=true;try{applyState(res.data.state);}finally{softRender=false;}offlineMode=false;}else if(res&&/entre novamente/i.test(res.error||''))needLogin=true;}catch(e){if(e.network)netOk=false;}}
+ if(myQueue().some(i=>i.status!=='error')&&!needLogin)await flushQueue();
+ updateNetBar();
+}
+function updateNetBar(){
+ const bar=$('#netBar');if(!bar)return;
+ if(!session&&!queue.length){bar.classList.add('hide');document.body.classList.remove('has-netbar');return;}
+ if(!session){const online=isOnline();bar.innerHTML=`<span class="dot"></span><b>${online?'Online':'Offline'}</b><span>· ${queue.length} visita(s) guardada(s) neste aparelho</span><span>· entre ${online?'':'com internet '}com o mesmo usuário para enviar</span>`;bar.className='netbar '+(online?'warn':'off');document.body.classList.add('has-netbar');return;}
+ const online=isOnline(),mine=myQueue(),pend=mine.filter(i=>i.status!=='error').length,errs=mine.filter(i=>i.status==='error').length,others=queue.length-mine.length,when=S&&S._syncedAt?fmtDH(S._syncedAt):'—';
+ let html=`<span class="dot"></span><b>${online?'Online':'Offline'}</b><span>· ${online&&!offlineMode?'atualização':'dados de'} ${escape(when)}</span>`;
+ if(pend)html+=`<span>· <b>${pend}</b> visita(s) ${online&&!needLogin?'enviando…':'guardada(s) no aparelho'}</span>`;
+ if(!online){const exp=session&&session.expires;html+=pend?(exp&&exp>Date.now()?`<span>· conecte-se até <b>${escape(fmtDay(exp))}</b> para subir sozinho</span>`:'<span>· com internet, entre de novo para enviar</span>'):'<span>· precisa de internet para enviar</span>';}
+ if(needLogin&&pend&&online)html+='<span>· sessão vencida: <button type="button" class="linkbtn" data-act="relogin">entrar para enviar</button></span>';
+ if(errs)html+=`<span>· <button type="button" class="linkbtn" data-act="pend">⚠ ${errs} com erro</button></span>`;else if(pend)html+='<span>· <button type="button" class="linkbtn" data-act="pend">ver pendentes</button></span>';
+ if(others)html+=`<span>· ${others} de outro usuário neste aparelho</span>`;
+ bar.innerHTML=html;bar.className='netbar '+(errs?'warn':online?'ok':'off');document.body.classList.add('has-netbar');
+}
+function openPending(){
+ const mine=myQueue(),body=$('#modalBody');body.innerHTML='';openModal('Visitas guardadas neste aparelho');
+ body.append(el('p','muted-hint','Cada visita só sai daqui depois que o servidor confirma a gravação na planilha. Reenviar não duplica registros.'));
+ if(!mine.length)body.append(el('p','house-status success','Nenhuma visita pendente. Tudo já foi enviado.'));
+ for(const i of mine){const box=el('div','house-status '+(i.status==='error'?'warning':''));box.innerHTML=`<b>${escape(i.summary)}</b><br>${i.kind==='closed'?'Casa fechada':i.people+' pessoa(s)'} · guardada em ${escape(fmtDay(i.created_at))}${i.status==='error'?`<br><b>Recusada pelo servidor:</b> ${escape(i.error)}`:'<br>Aguardando envio.'}`;
+  if(i.status==='error'){const retry=el('button','btn small','Tentar de novo'),drop=el('button','btn small','Descartar');retry.type='button';drop.type='button';retry.onclick=async()=>{i.status='pending';i.error='';await saveQueue();openPending();await backgroundSync();openPending();};drop.onclick=async()=>{if(!confirm('Descartar esta visita? Ela será apagada deste aparelho e não irá para a planilha. Baixe uma cópia antes, se precisar.'))return;queue=queue.filter(x=>x.id!==i.id);await saveQueue();openPending();};box.append(el('br'),retry,document.createTextNode(' '),drop);}
+  body.append(box);}
+ const act=el('div','action-line'),send=el('button','btn primary','Enviar agora'),dl=el('button','btn','Baixar cópia de segurança (JSON)');send.type='button';dl.type='button';send.disabled=!isOnline();
+ send.onclick=async()=>{send.disabled=true;await backgroundSync();openPending();notify(myQueue().some(i=>i.status!=='error')?'Ainda há visitas aguardando: confira a internet.':'Envio concluído.');};
+ dl.onclick=()=>downloadFile('bica-visitas-pendentes-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')+'.json',JSON.stringify(mine,null,2),'application/json');
+ act.append(send,dl);body.append(act);
+}
+// Login offline: guarda só um resumo (PBKDF2) da senha de quem já entrou neste aparelho com internet.
+async function hashCred(login,senha,salt){try{if(!crypto||!crypto.subtle)return null;const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(senha),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode(salt+'|'+login.toLowerCase()),iterations:120000,hash:'SHA-256'},key,256);return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');}catch(_){return null;}}
+async function rememberCred(login,senha,user){try{const salt=uid('S'),h=await hashCred(login,senha,salt);if(h)await kv.set('cred_'+login.toLowerCase(),{ts:Date.now(),salt,hash:h,user},true);}catch(_){}}
+async function offlineLogin(login,senha){const c=await kv.get('cred_'+login.toLowerCase(),true);if(!c)return null;const h=await hashCred(login,senha,c.salt);return h&&h===c.hash?c.user:null;}
+// Rascunho automático da visita em andamento
+const draftKey=()=>session&&session.user?'bica_draft_'+session.user.id:'';
+function saveDraftSoon(){clearTimeout(draftTimer);draftTimer=setTimeout(saveDraftNow,400);}
+function saveDraftNow(){if(!session||!uiReady||!draftKey())return;if(justSaved){store.del(draftKey());return;}const dirty=people.some(p=>p.outcome||Object.keys(p.answers).length||p.age!==''||p.sex)||$('#streetNumber').value.trim();if(!dirty){store.del(draftKey());return;}const d={v:1,block:activeBlock,streetLocked,streetValue,number:$('#streetNumber').value,complement:$('#streetComplement').value,residents:$('#residentsTotal').value,note:$('#visitNote').value,team:formTeam?formTeam.value():'',acs:formAcs?formAcs.value():'',people:people.map(p=>Object.assign({},p,{audioBlob:null,audioUrl:null})),loadedHouseId,visitReq,ts:Date.now()};try{store.set(draftKey(),JSON.stringify(d));}catch(_){}}
+function clearDraft(){if(draftKey())store.del(draftKey());}
+function restoreDraft(){if(!draftKey())return;let d=null;try{d=JSON.parse(store.get(draftKey())||'null');}catch(_){}if(!d||d.v!==1)return;
+ if(d.block&&S.blocks.some(b=>b.id===d.block))activeBlock=d.block;streetLocked=!!d.streetLocked&&!!streetById(d.streetValue);streetValue=streetLocked?d.streetValue:'';$('#streetSearch').value=streetLocked?streetName(streetValue):'';
+ $('#streetNumber').value=d.number||'';$('#streetComplement').value=d.complement||'';$('#residentsTotal').value=d.residents||'';$('#visitNote').value=d.note||'';
+ people=(d.people||[]).map(p=>Object.assign(newPerson(),p,{audioBlob:null,audioUrl:null}));if(!people.length)people=[newPerson()];loadedHouseId=d.loadedHouseId||'';visitReq=d.visitReq||'';justSaved=false;
+ formTeam.set(d.team||'');formAcs.set(d.acs||'');lastHouseKey=streetValue+'|'+canon(d.number)+'|'+canon(d.complement);
+ renderAll();showPage('form');notify('Visita em andamento recuperada deste aparelho.');}
+
 /* ============================== SESSÃO ============================== */
 function loginMessage(text,kind){const m=$('#loginMsg');m.textContent=text||'';m.className='house-status '+(kind||'warning');m.classList.toggle('hide',!text);}
 function saveSession(){store.set('bica_session',JSON.stringify(session));}
-function loadSession(){try{const s=JSON.parse(store.get('bica_session')||'null');if(s&&s.token&&s.expires>Date.now()+60000)return s;}catch(_){}return null;}
-function logout(message){stopAudio();session=null;S=null;uiReady=false;store.del('bica_session');people=[newPerson()];personIndex=0;streetLocked=false;streetValue='';closeModal();$('#app').classList.add('hide');$('#loginScreen').classList.remove('hide');loginMessage(message||'', 'warning');}
+function loadSession(){try{const s=JSON.parse(store.get('bica_session')||'null');if(s&&s.user&&s.user.id)return s;}catch(_){}return null;}
+const sessionValid=()=>!!(session&&session.token&&session.expires>Date.now()+60000);
+function logout(message){stopAudio();clearTimeout(draftTimer);const lastLogin=store.get('bica_last_login');session=null;S=null;uiReady=false;offlineMode=false;if(lastLogin&&!$('#loginUser').value)$('#loginUser').value=lastLogin;store.del('bica_session');people=[newPerson()];personIndex=0;streetLocked=false;streetValue='';closeModal();$('#app').classList.add('hide');$('#loginScreen').classList.remove('hide');loginMessage(message||'', 'warning');updateNetBar();}
 async function doLogin(e){
  e.preventDefault();const btn=$('#loginBtn');btn.disabled=true;loginMessage('');
- try{const r=await api('login',{login:$('#loginUser').value.trim(),senha:$('#loginPass').value},{busy:'Verificando acesso…'});session={token:r.token,user:r.user,expires:r.expires};saveSession();$('#loginPass').value='';await enterApp();}
- catch(err){loginMessage(err.message,'warning');}
+ const login=$('#loginUser').value.trim(),senha=$('#loginPass').value;
+ try{const r=await api('login',{login,senha},{busy:'Verificando acesso…'});session={token:r.token,user:r.user,expires:r.expires};needLogin=false;saveSession();store.set('bica_last_login',login);$('#loginPass').value='';rememberCred(login,senha,{user:r.user,token:r.token,expires:r.expires});await enterApp();}
+ catch(err){
+  if(err.network&&login&&senha){const c=await offlineLogin(login,senha);if(c){session={token:c.token||'',user:c.user,expires:c.expires||0};saveSession();$('#loginPass').value='';await enterApp({offline:true});return;}loginMessage('Sem internet. O acesso sem internet só funciona neste aparelho para quem já entrou nele com internet, usando a mesma senha.','warning');}
+  else loginMessage(err.message,'warning');}
  finally{btn.disabled=false;}
 }
-async function enterApp(){
- try{await api('bootstrap',{}, {busy:'Carregando dados da planilha…'});}
- catch(err){if(session)logout('Não foi possível carregar os dados: '+err.message);return;}
+async function enterApp(opts={}){
+ await loadQueue();
+ if(!sessionValid()&&navigator.onLine!==false&&!opts.offline){logout('Sua sessão expirou. Entre novamente.');return;}
+ let loaded=false;
+ if(sessionValid()&&navigator.onLine!==false){
+  try{await api('bootstrap',{}, {busy:'Carregando dados da planilha…'});loaded=true;offlineMode=false;}
+  catch(err){if(!session)return;if(!err.network){logout('Não foi possível carregar os dados: '+err.message);return;}}
+ }
+ if(!loaded){
+  if(!sessionValid())needLogin=true;
+  let c=null;try{c=await kv.get('state_'+session.user.id);}catch(_){}
+  if(!c||!c.state){logout(navigator.onLine===false||!netOk?'Sem internet e sem dados guardados neste aparelho. Conecte-se à internet para o primeiro acesso.':'Sua sessão expirou. Entre novamente.');return;}
+  try{applyState(JSON.parse(c.state),c.savedAt);}catch(_){logout('Os dados guardados neste aparelho estão incompletos. Conecte-se à internet e entre novamente.');return;}
+  offlineMode=true;
+ }
  $('#loginScreen').classList.add('hide');$('#app').classList.remove('hide');
- renderShell();showPage(currentPage);
+ renderShell();showPage(currentPage);restoreDraft();updateNetBar();
+ if(offlineMode)notify(navigator.onLine===false?'Sem internet: mostrando os últimos dados guardados neste aparelho. As visitas ficam guardadas e sobem quando a internet voltar.':'Mostrando os últimos dados guardados neste aparelho.');
+ backgroundSync();
 }
-function applyState(st){
- S=st;S._syncedAt=new Date();
+function applyState(st,cachedAt){
+ if(!cachedAt&&st&&st.user&&st.user.id){try{const snap=JSON.stringify(st),uidk='state_'+st.user.id,at=new Date().toISOString();kv.set(uidk,{savedAt:at,state:snap}).catch(()=>{});}catch(_){}}
+ S=st;S._syncedAt=cachedAt?new Date(cachedAt):new Date();if(!cachedAt)offlineMode=false;
  S._street={};S.streets.forEach(s=>{S._street[s.id]=s;});
  S._house={};S.houses.forEach(h=>{S._house[h.id]=h;});
  S._team=Object.fromEntries(S.teams.map(t=>[t.id,t.name]));S._acs=Object.fromEntries(S.acs.map(a=>[a.id,a.name]));
@@ -1158,6 +1276,7 @@ function applyState(st){
  if(session&&S.user)session.user=S.user;
  if(!S.blocks.some(b=>b.id===activeBlock))activeBlock=(S.blocks.find(b=>b.id===store.get('bica_block'))||S.blocks[0]||{}).id||'';
  if(uiReady)renderAll();
+ updateNetBar();
 }
 function renderShell(){
  const coord=isCoord();
@@ -1228,6 +1347,7 @@ function renderHeader(){
 }
 function renderAll(){
  if(!S||!uiReady)return;
+ if(softRender){const typing=()=>{const a=document.activeElement;return !!(a&&a.closest&&a.closest('.page.active')&&/INPUT|TEXTAREA|SELECT/.test(a.tagName));};renderHeader();renderHouseList();checkHouse();$('#sessionInterviewCount').textContent=sentThisSession+' registros novos';$('#demoInterviewCount').textContent=sentThisSession;if(currentPage==='overview'){renderOverview();renderTerritoryMap();}if(currentPage==='houses'&&!typing())renderHouses();if(currentPage==='dashboard'&&!typing())renderDashboard();return;}
  refreshBlockSelectors();renderHeader();renderOverview();renderForm();renderHouses();
  if(currentPage==='dashboard')renderDashboard();
  if(isCoord()){renderStreetAdmin();renderBuilder();renderGovernance();renderFeedback();if(currentPage==='report')renderReport();}
@@ -1248,7 +1368,7 @@ function selectBlock(id){
  if(dirty&&!justSaved&&!confirm('Há uma visita em andamento. Trocar de bloco descarta as respostas não enviadas. Continuar?')){refreshBlockSelectors();return;}
  activeBlock=id;store.set('bica_block',id);consentDirty=false;clearVisit(true);renderAll();
 }
-async function refreshData(){try{await api('bootstrap',{}, {busy:'Atualizando dados…'});notify('Dados atualizados a partir da planilha.');}catch(e){notify(e.message);}}
+async function refreshData(){if(navigator.onLine===false){notify('Sem internet: mostrando os últimos dados guardados neste aparelho.');return;}if(!sessionValid()){needLogin=true;updateNetBar();notify('Sessão vencida: entre de novo para atualizar e enviar.');return;}try{await api('bootstrap',{}, {busy:'Atualizando dados…'});notify('Dados atualizados a partir da planilha.');await backgroundSync();}catch(e){notify(e.message);}}
 
 /* ============================== VISÃO GERAL ============================== */
 function renderOverview(){
@@ -1293,7 +1413,7 @@ function fixStreet(){const name=$('#streetSearch').value.trim();if(!name){notify
 function renderStreetState(){$('#streetChoose').classList.toggle('hide',streetLocked);$('#streetSession').classList.toggle('hide',!streetLocked);$('#streetFixedName').textContent=streetLocked?streetName(streetValue):'—';}
 function changeStreet(){if(recordingPersonId){notify('Finalize a gravação antes de trocar a rua.');return;}clearVisit(false);}
 function newVisit(){if(recordingPersonId){notify('Finalize a gravação antes de iniciar outro domicílio.');return;}const dirty=!justSaved&&people.some(p=>p.outcome||Object.keys(p.answers).length);if(dirty&&!confirm('A visita atual ainda não foi enviada. Descartar e começar outra casa?'))return;clearVisit(true);notify(streetLocked?'Novo domicílio preparado. A rua foi mantida.':'Novo domicílio preparado. Fixe a rua antes de concluir.');$('#streetNumber').focus();}
-function clearVisit(retainStreet=true){people.forEach(p=>{if(p.audioUrl)URL.revokeObjectURL(p.audioUrl);});people=[newPerson()];personIndex=0;$('#residentsTotal').value='';$('#streetNumber').value='';$('#streetComplement').value='';$('#visitNote').value='';justSaved=false;visitReq='';lastHouseKey='';loadedHouseId='';$('#submitVisit').disabled=false;$('#closedHouse').disabled=false;$('#formOutcome').innerHTML='';if(!retainStreet){streetLocked=false;streetValue='';$('#streetSearch').value='';}if(uiReady)renderForm();}
+function clearVisit(retainStreet=true){clearDraft();people.forEach(p=>{if(p.audioUrl)URL.revokeObjectURL(p.audioUrl);});people=[newPerson()];personIndex=0;$('#residentsTotal').value='';$('#streetNumber').value='';$('#streetComplement').value='';$('#visitNote').value='';justSaved=false;visitReq='';lastHouseKey='';loadedHouseId='';$('#submitVisit').disabled=false;$('#closedHouse').disabled=false;$('#formOutcome').innerHTML='';if(!retainStreet){streetLocked=false;streetValue='';$('#streetSearch').value='';}if(uiReady)renderForm();}
 function ensurePeople(){const raw=Number($('#residentsTotal').value);const base=S&&moduleEnabled('multi')?Math.min(15,Math.max(1,Number.isFinite(raw)&&raw>0?Math.floor(raw):1)):1;const wanted=Math.max(base,people.filter(p=>p.existing).length);while(people.length<wanted)people.push(newPerson());if(personIndex>=wanted)personIndex=wanted-1;if(personIndex<0)personIndex=0;return wanted;}
 function renderConsentText(){const t=S.terms[activeBlock],summary=document.querySelector('#consentStart .consent-summary');if(!summary)return;if(!t){summary.innerHTML='<p><b>Nenhum termo ativo para este bloco.</b> A coordenação precisa cadastrar o termo antes da coleta.</p>';return;}const draft=/MINUTA PARA VALIDA/i.test(t.body);summary.innerHTML=`<p><b>Termo versão ${escape(t.version)}${draft?' — minuta ainda não validada':''}.</b> Leia ou explique o conteúdo integral em linguagem acessível antes de registrar a manifestação de cada pessoa.</p><details><summary>Exibir texto integral para leitura</summary><div class="consent-full-read">${escape(t.body)}</div></details>`;}
 function renderPeople(){renderConsent();renderQuestionnaire();}
@@ -1356,13 +1476,15 @@ function checkHouse(){
  if(!number){host.textContent='Informe um número para verificar se o domicílio já foi visitado.';lastHouseKey='';return;}
  if(!streetLocked){host.textContent='Fixe a rua antes de registrar a visita.';return;}
  const h=findHouse(streetValue,number,comp),key=streetValue+'|'+canon(number)+'|'+canon(comp),changed=key!==lastHouseKey;lastHouseKey=key;
+ const pendHere=!justSaved&&pendingKeys().has(key);
  if(changed&&loadedHouseId&&(!h||h.id!==loadedHouseId)){people=[newPerson()];personIndex=0;loadedHouseId='';renderPeople();}
- if(!h){host.textContent=`Número ${number}${comp?' · '+comp:''} ainda não está cadastrado nesta rua. A casa será criada ao concluir a visita.`;host.classList.add('success');if(changed)autofillFromStreet();return;}
+ if(!h){host.textContent=`Número ${number}${comp?' · '+comp:''} ainda não está cadastrado nesta rua. A casa será criada ao concluir a visita.`+(pendHere?' ⏳ Já existe visita deste endereço guardada neste aparelho, aguardando envio.':'');host.classList.add(pendHere?'warning':'success');if(changed)autofillFromStreet();return;}
  const b=houseBlock(h),status=b?.status||'PENDENTE',ps=S._personsByHouse[h.id]||[];
  if(changed){if(h.declared!=null&&String($('#residentsTotal').value)!==String(h.declared)){$('#residentsTotal').value=h.declared;renderPeople();}if(h.team_id)formTeam.set(h.team_id);if(h.acs_id)formAcs.set(h.acs_id);if(!h.team_id||!h.acs_id)autofillFromStreet();}
  const lines=[`Casa cadastrada · situação no bloco: ${STATUS_LABEL[status]} · ${b?.visits||0} tentativa(s) de visita.`,`Moradores: ${h.declared??'não informado'} · Equipe: ${teamName(h.team_id)||'—'} · ACS: ${acsName(h.acs_id)||'—'}`];
  if(b?.interviews||b?.absent)lines.push(`${b.interviews||0} entrevista(s) neste bloco${b.absent?` · ${b.absent} morador(es) ausente(s) aguardando retorno`:''}.`);
  if(status==='CONCLUIDA')lines.push('Atenção: domicílio concluído neste bloco. Evite duplicar entrevistas.');
+ if(pendHere)lines.push('⏳ Há visita deste endereço guardada neste aparelho, aguardando envio. Evite repetir a entrevista.');
  host.innerHTML=lines.map(escape).join('<br>');host.classList.add(status==='CONCLUIDA'||status==='RECUSA'?'warning':'success');
  const fix=el('button','btn small','✎ Corrigir número/complemento');fix.type='button';fix.title='Corrige o endereço desta casa sem perder entrevistas nem as respostas desta tela';fix.onclick=()=>openHouseModal(h,null,{onAddressChange:(number,complement)=>{$('#streetNumber').value=number;$('#streetComplement').value=complement;lastHouseKey=streetValue+'|'+canon(number)+'|'+canon(complement);}});host.append(el('br'),fix);
  const loaded=people.some(p=>p.existing);
@@ -1385,8 +1507,10 @@ function renderHouseList(){
  const hs=housesOfStreet(streetValue).slice().sort(byNumber),tot=streetResidents(streetValue),pending=hs.filter(h=>!['CONCLUIDA','RECUSA'].includes(houseStatus(h))).length,st=streetById(streetValue);
  $('#streetHouseTag').textContent=`${hs.length} casa(s)`;
  $('#streetProgress').textContent=`${hs.length} casa(s) cadastrada(s) · ${pending} pendente(s) · ≈ ${fmtNum(tot.estimate)} moradores${st?.homes!=null?` · previsão: ${st.homes} casas`:''}`;
- if(!hs.length){host.append(el('p','no-data','Nenhuma casa cadastrada nesta rua ainda. Informe o número ao lado para começar.'));return;}
- for(const h of hs){const b=houseBlock(h),status=b?.status||'PENDENTE',btn=el('button','house-item');btn.type='button';btn.innerHTML=`<div><strong>Nº ${escape(h.number)}${h.complement?' · '+escape(h.complement):''}</strong><small>${b?.interviews?b.interviews+' entrevista(s) · ':''}${b?.visits||0} tentativa(s)${h.acs_id?' · ACS '+escape(acsName(h.acs_id)):''}</small></div><span class="pill ${STATUS_PILL[status]}">${escape(STATUS_LABEL[status])}</span>`;btn.onclick=()=>{$('#streetNumber').value=h.number;$('#streetComplement').value=h.complement||'';checkHouse();$('#streetNumber').scrollIntoView({behavior:'smooth',block:'center'});};host.append(btn);}
+ if(!hs.length&&!myQueue().some(i=>i.payload.street_id===streetValue&&i.payload.block_id===activeBlock)){host.append(el('p','no-data','Nenhuma casa cadastrada nesta rua ainda. Informe o número ao lado para começar.'));return;}
+ const pk=pendingKeys();
+ for(const i of myQueue()){const pl=i.payload;if(pl.block_id!==activeBlock||pl.street_id!==streetValue||findHouse(streetValue,pl.number,pl.complement))continue;const btn=el('button','house-item');btn.type='button';btn.innerHTML=`<div><strong>Nº ${escape(pl.number)}${pl.complement?' · '+escape(pl.complement):''}</strong><small>casa nova · guardada neste aparelho</small></div><span class="pill pending-sync">${i.status==='error'?'⚠ Erro no envio':'⏳ Aguardando envio'}</span>`;btn.onclick=()=>openPending();host.append(btn);}
+ for(const h of hs){const b=houseBlock(h),status=b?.status||'PENDENTE',btn=el('button','house-item'),wait=pk.has(h.street_id+'|'+canon(h.number)+'|'+canon(h.complement));btn.type='button';btn.innerHTML=`<div><strong>Nº ${escape(h.number)}${h.complement?' · '+escape(h.complement):''}</strong><small>${b?.interviews?b.interviews+' entrevista(s) · ':''}${b?.visits||0} tentativa(s)${h.acs_id?' · ACS '+escape(acsName(h.acs_id)):''}</small></div><span class="pill ${wait?'pending-sync':STATUS_PILL[status]}">${wait?'⏳ Aguardando envio':escape(STATUS_LABEL[status])}</span>`;btn.onclick=()=>{$('#streetNumber').value=h.number;$('#streetComplement').value=h.complement||'';checkHouse();$('#streetNumber').scrollIntoView({behavior:'smooth',block:'center'});};host.append(btn);}
 }
 function renderForm(){
  if(!S||!uiReady)return;
@@ -1406,15 +1530,39 @@ function visitBase(){
  return {request_id:visitReq,block_id:activeBlock,street_id:streetValue,number,complement:comp,declared:raw===''?'':Number(raw),team_id:formTeam.value(),acs_id:formAcs.value(),note:$('#visitNote').value.trim()};
 }
 function cleanAnswers(p){const out={};for(const q of activeQuestions()){if(!allowed(q,p.answers))continue;const v=p.answers[q.id];if(v===undefined||v===''||(Array.isArray(v)&&!v.length))continue;out[q.id]=typeof v==='string'?v.trim():v;}return out;}
+function visitSummary(payload,kind){return `${streetName(payload.street_id)}, nº ${payload.number}${payload.complement?' · '+payload.complement:''}`;}
+function showSaved(r,kind,payload){
+ justSaved=true;clearDraft();sentThisSession+=r.interviews||0;
+ $('#formOutcome').innerHTML=`<div class="house-status success"><strong>${r.duplicate?'Esta visita já estava registrada na planilha.':kind==='closed'?'Tentativa registrada: casa fechada / ninguém atendeu.':'Visita registrada na planilha.'}</strong><br>${r.interviews||0} entrevista(s) · situação da casa: ${escape(STATUS_LABEL[r.status]||r.status||'—')}. Rua mantida: ${escape(streetName(streetValue))}. Para a próxima casa, clique em <b>Nova entrevista na mesma rua</b>.</div>`;
+ $('#sessionInterviewCount').textContent=sentThisSession+' registros novos';$('#demoInterviewCount').textContent=sentThisSession;
+ notify(r.interviews?`${r.interviews} entrevista(s) gravada(s).`:'Visita gravada.');
+}
+function showQueued(kind,why){
+ justSaved=true;clearDraft();
+ const exp=session&&session.expires>Date.now()?fmtDay(session.expires):'';
+ $('#formOutcome').innerHTML=`<div class="house-status warning"><strong>📱 ${kind==='closed'?'Tentativa':'Visita'} guardada neste aparelho.</strong><br>${escape(why)} Ela sobe sozinha para a planilha assim que houver internet${exp?` (conecte-se até <b>${escape(exp)}</b> para o envio automático; depois disso, basta entrar de novo)`:needLogin?' e você entrar de novo':''}. Não apague os dados do navegador nem use janela anônima. Pode seguir: clique em <b>Nova entrevista na mesma rua</b>.</div>`;
+ renderHouseList();checkHouse();updateNetBar();notify('Visita guardada no aparelho. Será enviada quando houver internet.');
+}
 async function sendVisit(payload,kind){
  const buttons=['#submitVisit','#closedHouse'].map(s=>$(s));buttons.forEach(b=>{b.disabled=true;});$('#formOutcome').innerHTML='';
- try{
-  const r=await api('saveVisit',payload,{busy:'Gravando a visita na planilha…'});
-  justSaved=true;sentThisSession+=r.interviews||0;
-  $('#formOutcome').innerHTML=`<div class="house-status success"><strong>${r.duplicate?'Esta visita já estava registrada na planilha.':kind==='closed'?'Tentativa registrada: casa fechada / ninguém atendeu.':'Visita registrada na planilha.'}</strong><br>${r.interviews||0} entrevista(s) · situação da casa: ${escape(STATUS_LABEL[r.status]||r.status)}. Rua mantida: ${escape(streetName(streetValue))}. Para a próxima casa, clique em <b>Nova entrevista na mesma rua</b>.</div>`;
-  $('#sessionInterviewCount').textContent=sentThisSession+' registros novos';$('#demoInterviewCount').textContent=sentThisSession;
-  notify(r.interviews?`${r.interviews} entrevista(s) gravada(s).`:'Visita gravada.');
- }catch(e){buttons.forEach(b=>{b.disabled=false;});$('#formOutcome').innerHTML=`<div class="house-status warning"><strong>Não foi possível gravar.</strong><br>${escape(e.message)}<br><small>As respostas continuam nesta tela. Corrija e tente de novo — o envio repetido não duplica registros.</small></div>`;notify(e.message);}
+ const item={id:payload.request_id,hold:true,user_id:session.user.id,kind,summary:visitSummary(payload,kind),people:(payload.people||[]).length,created_at:new Date().toISOString(),status:'pending',error:'',tries:0,payload:JSON.parse(JSON.stringify(payload))};
+ let queued=false;
+ try{queue=queue.filter(x=>x.id!==item.id);queue.push(item);await saveQueue();queued=true;}
+ catch(e){queue=queue.filter(x=>x.id!==item.id);}
+ if(!queued){ // aparelho sem armazenamento: comportamento antigo (envio direto)
+  try{const r=await api('saveVisit',payload,{busy:'Gravando a visita na planilha…'});showSaved(r,kind,payload);}
+  catch(e){buttons.forEach(b=>{b.disabled=false;});$('#formOutcome').innerHTML=`<div class="house-status warning"><strong>Não foi possível gravar.</strong><br>${escape(e.message)}<br><small>Este aparelho não permite guardar dados (janela anônima ou memória cheia), então a visita só fica nesta tela. Tente de novo quando houver internet — o envio repetido não duplica registros.</small></div>`;notify(e.message);}
+  return;
+ }
+ if(navigator.onLine===false){item.hold=false;saveQueue().catch(()=>{});showQueued(kind,'Sem internet agora.');return;}
+ if(!sessionValid()){item.hold=false;saveQueue().catch(()=>{});needLogin=true;showQueued(kind,'Sua sessão venceu: entre de novo com internet para enviar.');return;}
+ setBusy(true,'Gravando a visita na planilha…');
+ let out;try{out=await flushQueue(item.id);}finally{setBusy(false);item.hold=false;const q=queue.find(x=>x.id===item.id);if(q){q.hold=false;saveQueue().catch(()=>{});}}
+ const sent=out.sent.find(x=>x.item.id===item.id);
+ if(sent){showSaved(sent.data,kind,payload);return;}
+ const err=out.errors.find(x=>x.item.id===item.id);
+ if(err){queue=queue.filter(x=>x.id!==item.id);try{await saveQueue();}catch(_){}buttons.forEach(b=>{b.disabled=false;});$('#formOutcome').innerHTML=`<div class="house-status warning"><strong>Não foi possível gravar.</strong><br>${escape(err.msg)}<br><small>As respostas continuam nesta tela. Corrija e tente de novo — o envio repetido não duplica registros.</small></div>`;notify(err.msg);return;}
+ showQueued(kind,out.auth?'Sua sessão venceu: entre de novo com internet para enviar.':'A internet ou o servidor falharam no envio.');
 }
 async function saveVisit(){
  const base=visitBase();if(!base)return;
@@ -1694,7 +1842,7 @@ function wire(){
  const validUrl=v=>/^https:\/\/script\.google\.com\/.+\/exec$/.test(v);
  $('#saveApiUrl').onclick=()=>{const v=$('#apiUrlInput').value.trim();if(v&&!validUrl(v)){$('#apiState').textContent='A URL deve começar com https://script.google.com/ e terminar em /exec.';return;}if(v)store.set('bica_api_url',v);else store.del('bica_api_url');$('#apiState').textContent=v?'URL salva neste aparelho.':'URL removida.';};
  $('#testApi').onclick=async()=>{const v=$('#apiUrlInput').value.trim()||apiUrl();if(!validUrl(v)){$('#apiState').textContent='Informe uma URL válida terminada em /exec.';return;}$('#apiState').textContent='Testando…';try{const r=await rawCall({op:'ping'},v);$('#apiState').textContent=r&&r.ok?`Conectado: ${r.data.name}${r.data.configured?'':' (falta executar configurarBica no editor)'}`:'Servidor respondeu com erro: '+(r&&r.error||'desconhecido');}catch(e){$('#apiState').textContent=e.message;}};
- $('#logoutBtn').onclick=()=>{if(!justSaved&&people.some(p=>p.outcome||Object.keys(p.answers).length)&&!confirm('Há uma visita não enviada. Sair mesmo assim?'))return;logout('Sessão encerrada.');};
+ $('#logoutBtn').onclick=()=>{const q=myQueue().length;if(q&&!confirm(`Há ${q} visita(s) guardada(s) neste aparelho que ainda não subiram para a planilha. Elas continuam guardadas aqui e serão enviadas quando você entrar de novo com internet. Sair mesmo assim?`))return;if(!justSaved&&people.some(p=>p.outcome||Object.keys(p.answers).length)&&!confirm('Há uma visita em andamento, ainda não concluída. Sair mesmo assim?'))return;if(!justSaved)clearDraft();logout('Sessão encerrada.');};
  document.querySelectorAll('.nav [data-page]').forEach(b=>{b.onclick=()=>showPage(b.dataset.page);});
  $('#navRefresh').onclick=refreshData;$('#dashRefresh').onclick=refreshData;
  $('#goCollect').onclick=()=>showPage('form');$('#goDashboard').onclick=()=>showPage('dashboard');$('#seeResults').onclick=()=>showPage('dashboard');
@@ -1735,12 +1883,22 @@ function wire(){
  $('#mapFit').onclick=()=>{if(mapBase()==='google'&&googleMapV05){googleMapV05.__onceFit=false;fillGoogleMap();return;}if(territoryMap){const b=territoryFeatureGroup.getBounds();if(b.isValid())territoryMap.fitBounds(b.pad(.12),{maxZoom:18});else territoryMap.setView([-7.99075,-34.93205],17);}};
  $('#googleApiInput').oninput=e=>{googleApiKeySession=e.target.value.trim();};
  $('#useGoogleApiKey').onclick=()=>{if(!googleApiKeySession){notify('Informe uma chave Google Maps JavaScript API autorizada.');return;}$('#mapBaseMode').value='google';showPage('overview');};
- window.addEventListener('beforeunload',e=>{if(S&&!justSaved&&people.some(p=>p.outcome||Object.keys(p.answers).length)){e.preventDefault();e.returnValue='';}});
+ window.addEventListener('beforeunload',e=>{saveDraftNow();if(S&&!justSaved&&people.some(p=>p.outcome||Object.keys(p.answers).length)){e.preventDefault();e.returnValue='';}});
+ // modo offline
+ for(const ev of ['input','change','click'])$('#form').addEventListener(ev,saveDraftSoon);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveDraftNow();else backgroundSync();});
+ window.addEventListener('pagehide',saveDraftNow);
+ window.addEventListener('online',()=>{netOk=true;updateNetBar();backgroundSync(true);});
+ window.addEventListener('offline',()=>{netOk=false;updateNetBar();});
+ setInterval(()=>{if(session&&uiReady&&(offlineMode||myQueue().some(i=>i.status!=='error')))backgroundSync();else updateNetBar();},30000);
+ $('#netBar').addEventListener('click',e=>{const a=e.target.closest('[data-act]');if(!a)return;if(a.dataset.act==='pend')openPending();if(a.dataset.act==='relogin'){if(!justSaved)saveDraftNow();logout('Entre novamente para enviar as visitas guardadas neste aparelho.');}});
 }
 
 wire();
 people=[newPerson()];
 session=loadSession();
-if(session){$('#loginScreen').classList.add('hide');enterApp();}
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});}catch(_){}
+try{if('serviceWorker' in navigator&&!inAppsScript()&&location.protocol==='https:'&&/github\.io$/.test(location.hostname))navigator.serviceWorker.register('sw.js').catch(()=>{});}catch(_){}
+if(session){$('#loginScreen').classList.add('hide');enterApp();}else loadQueue();
 })();
 </script></body></html>
