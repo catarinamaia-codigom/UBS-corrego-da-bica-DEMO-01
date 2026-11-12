@@ -34,7 +34,7 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 
 ### Atualizar depois
 
-> **Versão 1.1 do servidor:** depois de colar os arquivos novos, execute `configurarBica()` de novo (cria a aba **Feedback** e atualiza o **Dicionario**, sem apagar nada) e publique uma nova versão em *Gerenciar implantações*. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
+> **Versão 1.2 do servidor:** depois de colar os três arquivos novos, execute `configurarBica()` de novo e publique uma nova versão em *Gerenciar implantações*. Isso cria a aba **Feedback** e a coluna `edicao_questionario` em **Entrevistas** e atualiza o **Dicionario**, sem apagar nada. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
 
 
 - **Interface (`index.html`):** basta fazer o commit no GitHub. Para o Apps Script mostrar a mudança na hora, execute `atualizarInterfaceBica()` no editor.
@@ -59,6 +59,13 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 | Ausente conta tentativa | Cada envio é uma linha em **Visitas**. Ausentes ficam pendentes e, no retorno, use *Carregar moradores já registrados*. Também existe o botão **Casa fechada / ninguém atendeu** |
 
 Recursos trazidos do Apps Script anterior: tokens assinados, validação no servidor, envio sem duplicar (`request_id`), termos versionados com o texto gravado junto ao consentimento, etapas PREPARAÇÃO/OPERAÇÃO (TREINAMENTO/PESQUISA), auditoria, fusão de ruas e de cadastros, confirmação de localização, gestão de acessos e as abas **Resumo** e **Dicionario**.
+
+## Mudar perguntas
+
+- **Ligar ou desligar perguntas de um bloco:** no app, menu **Construtor da pesquisa** (coordenação) → marque ou desmarque → **Publicar**. Vale para as próximas entrevistas; as respostas antigas continuam guardadas.
+- **Mudar o texto, criar pergunta ou criar opção:** edite `BICA_QUESTIONS` em `apps-script/Schema.gs` e some 1 em `BICA_EDICAO_QUESTIONARIO`. Marque o que é novo com a edição em que entrou, por exemplo `['codigo', 'Texto da opção', {desde: 3}]` ou `desde: 3` na pergunta. Depois execute `configurarBica()` e publique uma nova versão.
+- **Entrevistas antigas:** cada entrevista grava a edição do questionário (`edicao_questionario` em **Entrevistas**; vazio = edição 1). Em Indicadores e nas fichas, uma pergunta ou opção criada depois aparece como **“não constava”**, e o percentual dessa opção é calculado só sobre as entrevistas em que ela já existia.
+- Nunca reaproveite o código de uma opção com outro significado: crie um código novo.
 
 ## Modo offline (coleta sem internet)
 

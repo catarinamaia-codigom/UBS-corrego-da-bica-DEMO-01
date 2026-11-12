@@ -19,7 +19,7 @@ const BICA_SHEETS = {
   'Pessoas': ['id', 'domicilio_id', 'nome_opcional', 'sexo', 'idade_referida', 'parentesco', 'criado_em', 'atualizado_em'],
   'Visitas': ['id', 'request_id', 'bloco_id', 'domicilio_id', 'coletor_id', 'situacao', 'momento', 'moradores_informados', 'observacao', 'origem'],
   'Participacoes': ['id', 'visita_id', 'bloco_id', 'domicilio_id', 'pessoa_id', 'situacao', 'momento', 'coletor_id'],
-  'Entrevistas': ['id', 'visita_id', 'bloco_id', 'domicilio_id', 'pessoa_id', 'coletor_id', 'momento', 'informante', 'versao_formulario', 'consentimento_id', 'respostas_json', 'origem'],
+  'Entrevistas': ['id', 'visita_id', 'bloco_id', 'domicilio_id', 'pessoa_id', 'coletor_id', 'momento', 'informante', 'versao_formulario', 'consentimento_id', 'respostas_json', 'origem', 'edicao_questionario'],
   'Respostas': ['id', 'entrevista_id', 'bloco_id', 'domicilio_id', 'pessoa_id', 'pergunta_id', 'tipo', 'resposta_codificada', 'resposta_texto', 'momento'],
   'Termos': ['id', 'bloco_id', 'versao', 'texto_completo', 'criado_em', 'criado_por', 'ativo'],
   'Consentimentos': ['id', 'entrevista_id', 'pessoa_id', 'bloco_id', 'termo_id', 'termo_versao', 'manifestacao', 'modalidade', 'momento', 'coletor_id', 'texto_termo_registrado', 'observacao'],
@@ -39,13 +39,27 @@ const BICA_SENSITIVE_SHEETS = ['Acessos', 'Pessoas', 'Entrevistas', 'Respostas',
 /** Situação de cada pessoa em uma visita. Somente CONCORDOU abre o questionário. */
 const BICA_OUTCOMES = ['CONCORDOU', 'RECUSOU', 'NAO_SABE', 'AUSENTE'];
 
+/**
+ * EDIÇÃO DO QUESTIONÁRIO — como mudar perguntas sem bagunçar as entrevistas antigas
+ * - Ligar/desligar perguntas por bloco: no app, Construtor da pesquisa (coordenação). Não precisa mexer aqui.
+ * - Mudar texto, criar pergunta ou opção: edite BICA_QUESTIONS abaixo e SOME 1 em BICA_EDICAO_QUESTIONARIO.
+ *   Marque o que é novo com a edição em que entrou:
+ *     opção nova:   ['codigo', 'Texto da opção', {desde: 3}]
+ *     pergunta nova: {id: 'nova', ..., desde: 3}
+ *   Entrevistas feitas antes aparecem como "não constava" nos indicadores e nas fichas,
+ *   em vez de contarem como "não marcou".
+ * - Nunca reaproveite o código (id) de uma opção ou pergunta com outro significado; crie um código novo.
+ * Depois de editar: execute configurarBica() e publique uma nova versão da implantação.
+ */
+const BICA_EDICAO_QUESTIONARIO = 2; // 1 = questionário original (v1.0) · 2 = v1.1 (Conecta e filtro de dificuldade)
+
 const BICA_QUESTIONS = [
   {id: 'medico', group: 'Acesso e cuidado', label: 'Quando foi sua última consulta ao médico da unidade?', type: 'single', origin: 'original', options: [['menos6', 'Menos de 6 meses'], ['6a12', 'Há 1 ano'], ['mais12', 'Há mais de 1 ano'], ['nunca', 'Nunca consultei'], ['naosei', 'Não sei informar']], note: 'No original, nunca e não sei estavam juntos; separação proposta.'},
   {id: 'dentista', group: 'Acesso e cuidado', label: 'Quando foi sua última consulta ao dentista da unidade?', type: 'single', origin: 'original', options: [['ate12', 'Há menos de 1 ano'], ['mais12', 'Há mais de 1 ano'], ['nunca', 'Nunca consultei'], ['naosei', 'Não sei informar']]},
   {id: 'preventivo', group: 'Acesso e cuidado', label: 'Quando foi sua última prevenção?', type: 'single', origin: 'original', options: [['menos1', 'Há menos de 1 ano'], ['1mais', 'Há mais de 1 ano'], ['nunca', 'Nunca fiz'], ['na', 'Não se aplica'], ['naosei', 'Não sei informar']], note: 'Definir exame e elegibilidade antes da pesquisa.'},
   {id: 'comunicacao', group: 'Relacionamento com a unidade', label: 'Como você se comunica com a unidade?', type: 'multi', origin: 'original', options: [['presencial', 'Presencial'], ['ligacao', 'Telefone (ligação)'], ['whatsapp', 'WhatsApp'], ['conecta', 'Conecta']]},
   {id: 'conecta', group: 'Relacionamento com a unidade', label: 'Você conhece o Conecta?', type: 'single', origin: 'original', options: [['atual', 'Conheço e utilizo'], ['nunca', 'Conheço, mas não utilizo'], ['desconhece', 'Não conheço']]},
-  {id: 'motivos_conecta', group: 'Relacionamento com a unidade', label: 'Por que você não utiliza o Conecta?', type: 'multi', origin: 'original', depends: {field: 'conecta', values: ['nunca', 'desconhece']}, options: [['celular', 'Não tenho celular'], ['trava', 'O app trava'], ['utilizar', 'Não sei mexer no aplicativo'], ['vagas', 'Faltam vagas no aplicativo Conecta'], ['nao_explicaram', 'Não me explicaram como funciona']]},
+  {id: 'motivos_conecta', group: 'Relacionamento com a unidade', label: 'Por que você não utiliza o Conecta?', type: 'multi', origin: 'original', depends: {field: 'conecta', values: ['nunca', 'desconhece']}, options: [['celular', 'Não tenho celular'], ['trava', 'O app trava'], ['utilizar', 'Não sei mexer no aplicativo'], ['vagas', 'Faltam vagas no aplicativo Conecta'], ['nao_explicaram', 'Não me explicaram como funciona', {desde: 2}]]},
   {id: 'servicos', group: 'Acesso e cuidado', label: 'Acesso a serviços de saúde', type: 'multi', origin: 'original', options: [['sus', 'SUS'], ['plano', 'Plano de saúde'], ['mutirao', 'Mutirão político/social/igreja']]},
   {id: 'marcacao', group: 'Relacionamento com a unidade', label: 'Como você marca a consulta?', type: 'multi', origin: 'original', options: [['acolhimento', 'Acolhimento'], ['recepcao', 'Marcação tradicional na recepção'], ['conecta', 'Conecta Recife'], ['grupos', 'Grupos (Hiperdia...)'], ['acs', 'Consulta facilitada com ACS']]},
   {id: 'sem_dificuldades', group: 'Barreiras e melhorias', label: 'Você enfrenta alguma dificuldade para acessar a unidade?', type: 'single', origin: 'proposta', options: [['sim', 'Tem dificuldade'], ['nao', 'Não tem dificuldade'], ['naosei', 'Não sabe informar']], note: 'Pergunta-filtro: “Tem dificuldade” abre a lista de dificuldades.'},
