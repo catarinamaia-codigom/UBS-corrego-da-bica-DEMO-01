@@ -10,7 +10,7 @@
  */
 
 /** Versão do servidor (o app avisa a coordenação quando o Apps Script está desatualizado). */
-const BICA_VERSAO = '1.1';
+const BICA_VERSAO = '1.2';
 
 /** Nome exibido no app, nos PDFs e no título da planilha. */
 const BICA_TITLE = 'USF MAIS CÓRREGO DA BICA — EQUIPE 2';

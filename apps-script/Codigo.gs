@@ -512,7 +512,7 @@ function bicaSnapshot_(actor) {
   }
   const records = ints.map(i => {
     const h = houseById[String(i.domicilio_id)], p = personById[String(i.pessoa_id)], answers = bicaJson_(i.respostas_json);
-    const base = {id: String(i.id), block_id: String(i.bloco_id), street_id: streetOf[String(i.domicilio_id)] || '', sex: p ? bicaStr_(p.sexo) : '', age: p && p.idade_referida !== '' ? Number(p.idade_referida) : '', created_at: bicaStr_(i.momento), source: bicaStr_(i.origem)};
+    const base = {id: String(i.id), block_id: String(i.bloco_id), street_id: streetOf[String(i.domicilio_id)] || '', sex: p ? bicaStr_(p.sexo) : '', age: p && p.idade_referida !== '' ? Number(p.idade_referida) : '', created_at: bicaStr_(i.momento), source: bicaStr_(i.origem), edition: Number(i.edicao_questionario) || 1};
     if (!coord) { textQ.forEach(k => { delete answers[k]; }); base.answers = answers; return base; }
     const c = consById[String(i.consentimento_id)] || {};
     return Object.assign(base, {visit_id: String(i.visita_id), house_id: String(i.domicilio_id), person_id: String(i.pessoa_id), number: h ? bicaStr_(h.numero) : '', complement: h ? bicaStr_(h.complemento) : '', name: p ? bicaStr_(p.nome_opcional) : '', proxy: bicaStr_(i.informante) || 'propria', question_version: bicaStr_(i.versao_formulario), collector_id: bicaStr_(i.coletor_id), collector: accName[String(i.coletor_id)] || bicaStr_(i.coletor_id), answers: answers,
@@ -520,7 +520,7 @@ function bicaSnapshot_(actor) {
   });
   const terms = {};
   termsRaw.filter(t => bicaTrue_(t.ativo)).forEach(t => { terms[String(t.bloco_id)] = {id: String(t.id), version: bicaStr_(t.versao), body: bicaStr_(t.texto_completo), updated: bicaStr_(t.criado_em)}; });
-  const out = {user: actor, title: BICA_TITLE, stage: bicaParam_('ETAPA') || 'PREPARACAO', avgResidents: bicaAvg_(), blocks, streets, teams, acs, houses, persons, records, terms, questions: BICA_QUESTIONS, modules: BICA_MODULES, serverTime: bicaNow_(), serverVersion: BICA_VERSAO};
+  const out = {questionEdition: BICA_EDICAO_QUESTIONARIO, user: actor, title: BICA_TITLE, stage: bicaParam_('ETAPA') || 'PREPARACAO', avgResidents: bicaAvg_(), blocks, streets, teams, acs, houses, persons, records, terms, questions: BICA_QUESTIONS, modules: BICA_MODULES, serverTime: bicaNow_(), serverVersion: BICA_VERSAO};
   if (coord) {
     out.dbUrl = bicaDb_().getUrl();
     out.termsAll = {};
@@ -665,7 +665,7 @@ function bicaSaveVisit_(actor, a) {
       partRows.push({id: bicaId_('PAR'), visita_id: visit.id, bloco_id: block.id, domicilio_id: house.id, pessoa_id: pid, situacao: c.outcome, momento: now, coletor_id: actor.id});
       if (c.outcome !== 'CONCORDOU') return;
       const intId = bicaId_('ENT'), consId = bicaId_('CNS');
-      intRows.push({id: intId, visita_id: visit.id, bloco_id: block.id, domicilio_id: house.id, pessoa_id: pid, coletor_id: actor.id, momento: now, informante: c.informant, versao_formulario: block.id + '-v' + (Number(block.versao) || 1), consentimento_id: consId, respostas_json: JSON.stringify(c.answers), origem: origin});
+      intRows.push({id: intId, visita_id: visit.id, bloco_id: block.id, domicilio_id: house.id, pessoa_id: pid, coletor_id: actor.id, momento: now, informante: c.informant, versao_formulario: block.id + '-v' + (Number(block.versao) || 1), consentimento_id: consId, respostas_json: JSON.stringify(c.answers), origem: origin, edicao_questionario: BICA_EDICAO_QUESTIONARIO});
       consRows.push({id: consId, entrevista_id: intId, pessoa_id: pid, bloco_id: block.id, termo_id: term.id, termo_versao: term.versao, manifestacao: 'SIM', modalidade: c.mode, momento: now, coletor_id: actor.id, texto_termo_registrado: term.texto_completo, observacao: c.consentNote});
       Object.keys(c.answers).forEach(qid => {
         const q = BICA_QUESTIONS.find(x => x.id === qid), v = c.answers[qid];
