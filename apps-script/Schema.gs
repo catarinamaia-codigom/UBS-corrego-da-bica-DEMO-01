@@ -26,6 +26,8 @@ const BICA_SHEETS = {
   'Config_PDF': ['bloco_id', 'campos_json', 'atualizado_em', 'alterado_por'],
   'Dicionario': ['pergunta_id', 'grupo', 'pergunta', 'tipo', 'opcoes_json', 'origem', 'observacao'],
   'Auditoria': ['id', 'momento', 'ator_id', 'acao', 'entidade', 'entidade_id', 'detalhes_json'],
+  'Perguntas': ['id', 'grupo', 'pergunta', 'tipo', 'opcoes_json', 'condicao_json', 'origem', 'observacao', 'desde', 'atualizado_em', 'atualizado_por'],
+  'Historico_Questionario': ['id', 'momento', 'ator_id', 'ator_nome', 'edicao', 'escopo', 'pergunta_id', 'acao', 'resumo', 'detalhes_json'],
   'Feedback': ['id', 'momento', 'ator_id', 'ator_nome', 'perfil', 'tipo', 'texto', 'pagina', 'status', 'resolvido_em', 'resolvido_por'],
   'Resumo': ['indicador', 'valor', 'observacao']
 };
@@ -40,18 +42,17 @@ const BICA_SENSITIVE_SHEETS = ['Acessos', 'Pessoas', 'Entrevistas', 'Respostas',
 const BICA_OUTCOMES = ['CONCORDOU', 'RECUSOU', 'NAO_SABE', 'AUSENTE'];
 
 /**
- * EDIÇÃO DO QUESTIONÁRIO — como mudar perguntas sem bagunçar as entrevistas antigas
- * - Ligar/desligar perguntas por bloco: no app, Construtor da pesquisa (coordenação). Não precisa mexer aqui.
- * - Mudar texto, criar pergunta ou opção: edite BICA_QUESTIONS abaixo e SOME 1 em BICA_EDICAO_QUESTIONARIO.
- *   Marque o que é novo com a edição em que entrou:
- *     opção nova:   ['codigo', 'Texto da opção', {desde: 3}]
- *     pergunta nova: {id: 'nova', ..., desde: 3}
- *   Entrevistas feitas antes aparecem como "não constava" nos indicadores e nas fichas,
- *   em vez de contarem como "não marcou".
- * - Nunca reaproveite o código (id) de uma opção ou pergunta com outro significado; crie um código novo.
- * Depois de editar: execute configurarBica() e publique uma nova versão da implantação.
+ * EDIÇÃO DO QUESTIONÁRIO
+ * - Tudo é feito no app, em Construtor da pesquisa (coordenação):
+ *   ligar/desligar perguntas por bloco, incluir pergunta, corrigir textos, incluir/ocultar opções.
+ *   As inclusões e alterações ficam na aba Perguntas e o histórico na aba Historico_Questionario.
+ * - BICA_QUESTIONS abaixo é o questionário de base. A aba Perguntas sobrepõe/acrescenta (mesmo id = substitui).
+ * - Cada alteração aumenta a edição do questionário (parâmetro EDICAO_QUESTIONARIO). Cada entrevista grava a
+ *   edição com que foi feita; o que foi criado depois aparece como "não constava" nas entrevistas antigas.
+ *   Formato de opção: ['codigo', 'Texto', {desde: 3, oculta: true}] (meta opcional).
+ * - Códigos (ids) nunca são reaproveitados nem apagados: opção que deixou de valer é ocultada.
  */
-const BICA_EDICAO_QUESTIONARIO = 2; // 1 = questionário original (v1.0) · 2 = v1.1 (Conecta e filtro de dificuldade)
+const BICA_EDICAO_QUESTIONARIO = 2; // edição mínima: 1 = questionário original (v1.0) · 2 = v1.1 (Conecta e filtro de dificuldade)
 
 const BICA_QUESTIONS = [
   {id: 'medico', group: 'Acesso e cuidado', label: 'Quando foi sua última consulta ao médico da unidade?', type: 'single', origin: 'original', options: [['menos6', 'Menos de 6 meses'], ['6a12', 'Há 1 ano'], ['mais12', 'Há mais de 1 ano'], ['nunca', 'Nunca consultei'], ['naosei', 'Não sei informar']], note: 'No original, nunca e não sei estavam juntos; separação proposta.'},
@@ -82,7 +83,7 @@ const BICA_MODULES = [
 function bicaDefaultConfig_() {
   return {
     modules: Object.fromEntries(BICA_MODULES.map(m => [m.id, !!m.default])),
-    questions: Object.fromEntries(BICA_QUESTIONS.map(q => [q.id, true]))
+    questions: Object.fromEntries(bicaQuestions_().map(q => [q.id, true]))
   };
 }
 
