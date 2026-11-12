@@ -10,7 +10,7 @@
  */
 
 /** Versão do servidor (o app avisa a coordenação quando o Apps Script está desatualizado). */
-const BICA_VERSAO = '1.3';
+const BICA_VERSAO = '1.4';
 
 /** Nome exibido no app, nos PDFs e no título da planilha. */
 const BICA_TITLE = 'USF MAIS CÓRREGO DA BICA — EQUIPE 2';
@@ -35,6 +35,9 @@ const BICA_PLANILHA_ID = '';
 const BICA_MEDIA_MORADORES_PADRAO = 3;
 
 /** Duração da sessão após o login (horas). */
+// Casas criadas até este momento, com ACS e pela coordenação, vieram do cadastro dos tablets das ACS (importação em massa).
+// Pode ser ajustado na aba Parametros (CORTE_CADASTRO_ACS).
+const BICA_CORTE_CADASTRO_ACS = '2026-11-12T00:00:00-03:00';
 const BICA_SESSAO_HORAS = 12;
 
 /** Limites da região do Recife para validar coordenadas confirmadas. */

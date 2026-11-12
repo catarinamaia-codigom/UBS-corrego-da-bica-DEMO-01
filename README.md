@@ -34,7 +34,7 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 
 ### Atualizar depois
 
-> **Versão 1.3 do servidor:** depois de colar os três arquivos novos, execute `configurarBica()` de novo e publique uma nova versão em *Gerenciar implantações*. Isso cria as abas **Feedback**, **Perguntas** e **Historico_Questionario** e as colunas `edicao_questionario` (em **Entrevistas**) e `tipos_json` (em **Perguntas**), e atualiza o **Dicionario**, sem apagar nada. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
+> **Versão 1.4 do servidor:** depois de colar os três arquivos novos, execute `configurarBica()` de novo e publique uma nova versão em *Gerenciar implantações*. Isso cria as abas **Feedback**, **Perguntas** e **Historico_Questionario** e as colunas `edicao_questionario` (em **Entrevistas**) e `tipos_json` (em **Perguntas**) e as colunas de conferência em **Domicilios**, classifica as casas (tablet da ACS × não constava na ACS) e atualiza o **Dicionario**, sem apagar nada. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
 
 
 - **Interface (`index.html`):** basta fazer o commit no GitHub. Para o Apps Script mostrar a mudança na hora, execute `atualizarInterfaceBica()` no editor.
@@ -77,6 +77,27 @@ Tudo é feito no app, no menu **Construtor da pesquisa** (somente coordenação)
 Cada inclusão ou alteração cria uma nova **edição do questionário** (parâmetro `EDICAO_QUESTIONARIO`). Cada entrevista grava a edição com que foi feita (`edicao_questionario` em **Entrevistas**; vazio = edição 1). Uma visita feita sem internet guarda a edição que o aparelho estava usando. Em Indicadores e nas fichas, o que foi criado depois de uma entrevista aparece como **“não constava”**, e o percentual de uma opção nova é calculado só sobre as entrevistas em que ela já existia.
 
 As perguntas incluídas ou alteradas ficam na aba **Perguntas**, que se sobrepõe ao questionário de base em `Schema.gs`. Não edite essa aba à mão: use o app, que valida tudo e registra o histórico.
+
+## Conferência do cadastro das ACS
+
+O cadastro de casas importado dos tablets das ACS (11/11/2026) vai sendo validado durante o trabalho de campo. O painel fica no topo da página **Domicílios**.
+
+- **Origem de cada casa.** Ao executar `configurarBica()`, cada casa é classificada:
+  - **Tablet da ACS:** criada até `CORTE_CADASTRO_ACS` (aba Parametros), com ACS, pela coordenação.
+  - **Não constava na ACS:** incluída depois, no cadastro ou durante uma visita.
+  - O número e o complemento originais do tablet ficam guardados (`numero_acs` e `complemento_acs`). Se a casa já tinha sido corrigida, o original é recuperado da Auditoria.
+- **Classificação automática.**
+  - Corrigir o número ou o complemento de uma casa do tablet (no cadastro ou com **✎ Corrigir número/complemento** na pesquisa) classifica o caso e grava a etiqueta **“Cadastro desatualizado no Tablet ACS”**. Os casos possíveis são *Número errado*, *Sem complemento*, *Complemento errado* e *Número e complemento errados*.
+  - Registrar uma visita numa casa do tablet ainda não conferida a marca como *Confirmado sem erro*.
+- **Classificação manual.** No **Editar** da casa, dá para escolher *Não existe essa casa*, *Casa duplicada no cadastro*, *Erro de cadastro manual*, *Outro* ou *Confirmado sem erro*, com observação. Cada casa guarda o histórico das alterações (`conferencia_historico`).
+- **Indicadores.**
+  - Mostram as casas do tablet conferidas e as ainda não conferidas.
+  - Mostram quantas tinham número ou complemento errado ou faltante, com a porcentagem sobre as conferidas.
+  - Mostram as casas que não existem ou têm outros problemas, e as que não constavam na ACS.
+  - Tudo pode ser agrupado por rua ou por ACS e respeita os filtros. Há também um filtro **Conferência** na tabela de casas.
+- **Exportar.**
+  - **Exportar para a planilha** (coordenação) recria a aba **Conferencia_Cadastro**, ordenada por ACS → rua → número, com cores por status, filtro e histórico. Pode ser exportada de novo a qualquer momento.
+  - **Baixar tabela (CSV)** gera o mesmo conteúdo para abrir no Excel.
 
 ## Modo offline (coleta sem internet)
 
