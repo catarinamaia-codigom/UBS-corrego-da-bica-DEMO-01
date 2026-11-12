@@ -295,7 +295,7 @@ function bicaRewriteDictionary_() {
   const s = bicaSheet_('Dicionario'), heads = bicaHeads_('Dicionario');
   if (s.getLastRow() > 1) s.getRange(2, 1, s.getLastRow() - 1, heads.length).clearContent();
   delete BICA_ROWS_CACHE.Dicionario;
-  bicaAppend_('Dicionario', BICA_QUESTIONS.map(q => ({pergunta_id: q.id, grupo: q.group, pergunta: q.label, tipo: q.type, opcoes_json: JSON.stringify(q.options || []), origem: q.origin, observacao: q.note || (q.depends ? 'Exibida somente se ' + q.depends.field + ' = ' + q.depends.values.join(' ou ') : '')})));
+  bicaAppend_('Dicionario', bicaQuestions_().map(q => ({pergunta_id: q.id, grupo: q.group, pergunta: q.label, tipo: q.type, opcoes_json: JSON.stringify(q.options || []), origem: q.origin, observacao: q.note || (q.depends ? 'Exibida somente se ' + q.depends.field + ' = ' + q.depends.values.join(' ou ') : '')})));
 }
 
 function bicaWriteSummary_() {
@@ -389,6 +389,8 @@ function bicaRoute_(req) {
     case 'mergeStreets': coord(); return withState(bicaMergeStreets_(actor, data));
     case 'newBlock': coord(); return withState(bicaNewBlock_(actor, data));
     case 'saveBlock': coord(); return withState(bicaSaveBlock_(actor, data));
+    case 'addQuestion': coord(); return withState(bicaAddQuestion_(actor, data));
+    case 'updateQuestion': coord(); return withState(bicaUpdateQuestion_(actor, data));
     case 'saveTerm': coord(); return withState(bicaSaveTerm_(actor, data));
     case 'savePdfConfig': coord(); return withState(bicaSavePdfConfig_(actor, data));
     case 'setStage': coord(); return withState(bicaSetStage_(actor, data));
@@ -504,7 +506,7 @@ function bicaSnapshot_(actor) {
     return {id: String(h.id), street_id: st ? st.id : String(h.rua_id), number: bicaStr_(h.numero), complement: bicaStr_(h.complemento), declared: bicaNum_(h.moradores_declarados), team_id: bicaResolveRegistry_('EQUIPE', h.equipe_id, merges), acs_id: bicaResolveRegistry_('ACS', h.acs_id, merges), lat: confirmed ? bicaNum_(h.latitude) : null, lon: confirmed ? bicaNum_(h.longitude) : null, geo_status: bicaStr_(h.geo_status) || 'nao_localizado', created_at: bicaStr_(h.criado_em), updated_at: bicaStr_(h.atualizado_em), blocks: summary.houses[String(h.id)] || {}};
   });
   const persons = personsRaw.map(p => { personById[String(p.id)] = p; return {id: String(p.id), house_id: String(p.domicilio_id), sex: bicaStr_(p.sexo), age: bicaNum_(p.idade_referida), relationship: bicaStr_(p.parentesco), name: coord ? bicaStr_(p.nome_opcional) : '', blocks: summary.persons[String(p.id)] || {}}; });
-  const textQ = BICA_QUESTIONS.filter(q => q.type === 'text').map(q => q.id);
+  const textQ = bicaQuestions_().filter(q => q.type === 'text').map(q => q.id);
   const consById = {}, accName = {};
   if (coord) {
     bicaRows_('Consentimentos').forEach(c => { consById[String(c.id)] = c; });
@@ -520,7 +522,7 @@ function bicaSnapshot_(actor) {
   });
   const terms = {};
   termsRaw.filter(t => bicaTrue_(t.ativo)).forEach(t => { terms[String(t.bloco_id)] = {id: String(t.id), version: bicaStr_(t.versao), body: bicaStr_(t.texto_completo), updated: bicaStr_(t.criado_em)}; });
-  const out = {questionEdition: BICA_EDICAO_QUESTIONARIO, user: actor, title: BICA_TITLE, stage: bicaParam_('ETAPA') || 'PREPARACAO', avgResidents: bicaAvg_(), blocks, streets, teams, acs, houses, persons, records, terms, questions: BICA_QUESTIONS, modules: BICA_MODULES, serverTime: bicaNow_(), serverVersion: BICA_VERSAO};
+  const out = {questionEdition: bicaEdition_(), user: actor, title: BICA_TITLE, stage: bicaParam_('ETAPA') || 'PREPARACAO', avgResidents: bicaAvg_(), blocks, streets, teams, acs, houses, persons, records, terms, questions: bicaQuestions_(), modules: BICA_MODULES, serverTime: bicaNow_(), serverVersion: BICA_VERSAO};
   if (coord) {
     out.dbUrl = bicaDb_().getUrl();
     out.termsAll = {};
@@ -528,6 +530,7 @@ function bicaSnapshot_(actor) {
     out.pdfConfigs = {};
     bicaRows_('Config_PDF').forEach(r => { const c = Object.assign({}, BICA_PDF_DEFAULT, bicaJson_(r.campos_json)); out.pdfConfigs[String(r.bloco_id)] = c; });
     out.staff = bicaRows_('Acessos').map(x => ({id: String(x.id), name: String(x.identificacao), role: bicaRole_(x.perfil), login: String(x.login), active: bicaTrue_(x.ativo), created: bicaStr_(x.criado_em)}));
+    out.questionHistory = bicaDb_().getSheetByName('Historico_Questionario') ? bicaTail_('Historico_Questionario', 400).reverse().map(x => ({id: bicaStr_(x.id), at: bicaStr_(x.momento), actor: bicaStr_(x.ator_nome), edition: Number(x.edicao) || null, scope: bicaStr_(x.escopo), question: bicaStr_(x.pergunta_id), action: bicaStr_(x.acao), summary: bicaStr_(x.resumo)})) : [];
     out.feedback = bicaDb_().getSheetByName('Feedback') ? bicaTail_('Feedback', 300).reverse().map(x => ({id: bicaStr_(x.id), at: bicaStr_(x.momento), actor_id: bicaStr_(x.ator_id), actor: bicaStr_(x.ator_nome), role: bicaStr_(x.perfil), type: bicaStr_(x.tipo), text: bicaStr_(x.texto), page: bicaStr_(x.pagina), status: bicaStr_(x.status) || 'NOVO', resolved_at: bicaStr_(x.resolvido_em)})) : [];
     out.audit = bicaTail_('Auditoria', 40).reverse().map(x => ({at: bicaStr_(x.momento), actor: accName[String(x.ator_id)] || bicaStr_(x.ator_id), action: bicaStr_(x.acao), entity: bicaStr_(x.entidade), entity_id: bicaStr_(x.entidade_id), details: bicaStr_(x.detalhes_json).slice(0, 300)}));
   }
@@ -538,7 +541,7 @@ function bicaSnapshot_(actor) {
 
 function bicaAllowedAnswers_(input, config) {
   const ans = {};
-  BICA_QUESTIONS.forEach(q => {
+  bicaQuestions_().forEach(q => {
     if (config.questions && config.questions[q.id] === false) return;
     if (q.type === 'text' && config.modules && config.modules.open === false) return;
     const val = input ? input[q.id] : undefined;
@@ -587,7 +590,8 @@ function bicaSaveVisit_(actor, a) {
     if (prev) return {duplicate: true, visit_id: String(prev.id), house_id: String(prev.domicilio_id), status: String(prev.situacao), interviews: bicaRows_('Entrevistas').filter(i => String(i.visita_id) === String(prev.id)).length};
     const block = bicaRows_('Blocos').find(b => String(b.id) === String(a.block_id) && bicaTrue_(b.ativo));
     bicaAssert_(block, 'Bloco de pesquisa inválido ou inativo.');
-    const cfg = bicaNormConfig_(bicaJson_(block.config_json));
+    const cfg = bicaNormConfig_(bicaJson_(block.config_json)), catalog = bicaQuestions_(), curEd = bicaEdition_(), sentEd = Math.floor(Number(a.edition));
+    const edition = sentEd >= 1 && sentEd <= curEd ? sentEd : curEd; // edição usada no aparelho (visitas offline)
     const streets = bicaRows_('Ruas'), street = bicaCanonStreet_(bicaStr_(a.street_id), streets);
     bicaAssert_(street, 'Selecione uma rua cadastrada.');
     const number = bicaClean_(a.number, 35), comp = bicaClean_(a.complement, 160);
@@ -665,10 +669,10 @@ function bicaSaveVisit_(actor, a) {
       partRows.push({id: bicaId_('PAR'), visita_id: visit.id, bloco_id: block.id, domicilio_id: house.id, pessoa_id: pid, situacao: c.outcome, momento: now, coletor_id: actor.id});
       if (c.outcome !== 'CONCORDOU') return;
       const intId = bicaId_('ENT'), consId = bicaId_('CNS');
-      intRows.push({id: intId, visita_id: visit.id, bloco_id: block.id, domicilio_id: house.id, pessoa_id: pid, coletor_id: actor.id, momento: now, informante: c.informant, versao_formulario: block.id + '-v' + (Number(block.versao) || 1), consentimento_id: consId, respostas_json: JSON.stringify(c.answers), origem: origin, edicao_questionario: BICA_EDICAO_QUESTIONARIO});
+      intRows.push({id: intId, visita_id: visit.id, bloco_id: block.id, domicilio_id: house.id, pessoa_id: pid, coletor_id: actor.id, momento: now, informante: c.informant, versao_formulario: block.id + '-v' + (Number(block.versao) || 1), consentimento_id: consId, respostas_json: JSON.stringify(c.answers), origem: origin, edicao_questionario: edition});
       consRows.push({id: consId, entrevista_id: intId, pessoa_id: pid, bloco_id: block.id, termo_id: term.id, termo_versao: term.versao, manifestacao: 'SIM', modalidade: c.mode, momento: now, coletor_id: actor.id, texto_termo_registrado: term.texto_completo, observacao: c.consentNote});
       Object.keys(c.answers).forEach(qid => {
-        const q = BICA_QUESTIONS.find(x => x.id === qid), v = c.answers[qid];
+        const q = catalog.find(x => x.id === qid), v = c.answers[qid];
         respRows.push({id: bicaId_('RSP'), entrevista_id: intId, bloco_id: block.id, domicilio_id: house.id, pessoa_id: pid, pergunta_id: qid, tipo: q.type, resposta_codificada: q.type === 'text' ? '' : (Array.isArray(v) ? v.join('|') : v), resposta_texto: q.type === 'text' ? v : '', momento: now});
       });
       ids.push({interview_id: intId, person_id: pid});
@@ -949,6 +953,7 @@ function bicaSaveBlock_(actor, a) {
     bicaAssert_(name.length >= 4, 'O nome do bloco precisa de pelo menos 4 caracteres.');
     const version = (Number(b.versao) || 1) + (changed ? 1 : 0);
     bicaSetRow_('Blocos', 'id', b.id, {nome: name, config_json: JSON.stringify(next), versao: version, atualizado_em: bicaNow_()});
+    if (changed || name !== String(b.nome)) bicaBlockHistory_(actor, b, current, next, String(b.nome), name, version);
     bicaAudit_(actor, 'ATUALIZAR_CONFIG', 'BLOCO', b.id, {nome: name, versao: version, configuracao_alterada: changed});
     return {id: String(b.id), version: version};
   });
@@ -1029,4 +1034,178 @@ function bicaResetPassword_(actor, a) {
     bicaAudit_(actor, 'NOVA_SENHA', 'ACESSO', x.id, {});
     return {id: String(x.id), login: String(x.login), senha: senha};
   });
+}
+
+/* ============================== QUESTIONÁRIO EDITÁVEL ============================== */
+
+/** Edição atual do questionário (cresce a cada inclusão/alteração feita no Construtor). */
+function bicaEdition_() {
+  const p = Math.floor(Number(bicaParam_('EDICAO_QUESTIONARIO')) || 0);
+  return Math.max(BICA_EDICAO_QUESTIONARIO, p);
+}
+
+/** Questionário efetivo: BICA_QUESTIONS + aba Perguntas (mesmo id substitui; id novo entra no fim da sua área). */
+function bicaQuestions_() {
+  const base = JSON.parse(JSON.stringify(BICA_QUESTIONS));
+  const sheet = bicaDb_().getSheetByName('Perguntas');
+  if (!sheet) return base;
+  const rows = bicaRows_('Perguntas');
+  if (!rows.length) return base;
+  const out = base.slice();
+  rows.forEach(r => {
+    const id = bicaStr_(r.id).trim();
+    if (!id) return;
+    let opts = [];
+    try { opts = JSON.parse(bicaStr_(r.opcoes_json) || '[]'); } catch (e) { opts = []; }
+    const cond = bicaJson_(r.condicao_json);
+    const q = {id: id, group: bicaStr_(r.grupo), label: bicaStr_(r.pergunta), type: bicaStr_(r.tipo) || 'single', origin: bicaStr_(r.origem) || 'incluida', options: Array.isArray(opts) ? opts : []};
+    if (cond && cond.field) q.depends = {field: String(cond.field), values: (cond.values || []).map(String)};
+    if (bicaStr_(r.observacao)) q.note = bicaStr_(r.observacao);
+    const since = Math.floor(Number(r.desde) || 0);
+    if (since > 1) q.desde = since;
+    if (q.type === 'text') delete q.options;
+    const i = out.findIndex(x => x.id === id);
+    if (i >= 0) { out[i] = q; return; }
+    let at = -1;
+    out.forEach((x, k) => { if (x.group === q.group) at = k; });
+    if (at >= 0) out.splice(at + 1, 0, q); else out.push(q);
+  });
+  return out;
+}
+
+function bicaSlug_(text, max) {
+  const full = String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''), m = max || 24;
+  let cut = full.slice(0, m);
+  if (full.length > m && full[m] !== '_' && cut.lastIndexOf('_') > 3) cut = cut.slice(0, cut.lastIndexOf('_')); // não corta palavra no meio
+  return cut.replace(/_+$/, '') || 'item';
+}
+function bicaUniqueCode_(text, taken, max) {
+  let base = bicaSlug_(text, max), code = base, n = 2;
+  while (taken.indexOf(code) >= 0) code = base + '_' + (n++);
+  taken.push(code);
+  return code;
+}
+const BICA_TIPO_LABEL = {single: 'Única', multi: 'Múltipla', text: 'Texto livre'};
+
+function bicaQHistory_(actor, edition, scope, qid, action, summary, details) {
+  bicaEnsureSheet_('Historico_Questionario');
+  bicaAppend_('Historico_Questionario', {id: bicaId_('HQ'), momento: bicaNow_(), ator_id: actor.id, ator_nome: actor.name, edicao: edition, escopo: scope, pergunta_id: qid, acao: action, resumo: String(summary).slice(0, 500), detalhes_json: JSON.stringify(details || {}).slice(0, 4000)});
+}
+
+function bicaQuestionRow_(q, actor) {
+  return {id: q.id, grupo: q.group, pergunta: q.label, tipo: q.type, opcoes_json: JSON.stringify(q.type === 'text' ? [] : q.options), condicao_json: q.depends ? JSON.stringify(q.depends) : '', origem: q.origin || 'incluida', observacao: q.note || '', desde: q.desde || '', atualizado_em: bicaNow_(), atualizado_por: actor.name || actor.id};
+}
+function bicaSaveQuestionRow_(q, actor) {
+  bicaEnsureSheet_('Perguntas');
+  const row = bicaQuestionRow_(q, actor);
+  if (bicaRows_('Perguntas').some(r => String(r.id) === q.id)) bicaSetRow_('Perguntas', 'id', q.id, row);
+  else bicaAppend_('Perguntas', row);
+}
+function bicaCleanOptionLabels_(list) {
+  const labels = (Array.isArray(list) ? list : []).map(x => bicaClean_(typeof x === 'string' ? x : x && x.label, 150)).filter(Boolean);
+  const seen = {};
+  labels.forEach(l => { const k = l.toLowerCase(); bicaAssert_(!seen[k], 'Opção repetida: ' + l); seen[k] = true; });
+  return labels;
+}
+
+function bicaAddQuestion_(actor, a) {
+  return bicaLock_(function () {
+    const catalog = bicaQuestions_();
+    const label = bicaClean_(a.label, 300), group = bicaClean_(a.group, 80), type = String(a.type || '');
+    bicaAssert_(label.length >= 5, 'Escreva a pergunta (pelo menos 5 caracteres).');
+    bicaAssert_(group.length >= 2, 'Informe a área (grupo) da pergunta.');
+    bicaAssert_(['single', 'multi', 'text'].indexOf(type) >= 0, 'Tipo de pergunta inválido.');
+    bicaAssert_(!catalog.some(q => q.label.toLowerCase() === label.toLowerCase()), 'Já existe uma pergunta com este texto.');
+    const edition = bicaEdition_() + 1;
+    const q = {id: bicaUniqueCode_('q_' + bicaSlug_(label, 28), catalog.map(x => x.id), 34), group: group, label: label, type: type, origin: 'incluida', desde: edition};
+    if (type !== 'text') {
+      const labels = bicaCleanOptionLabels_(a.options);
+      bicaAssert_(labels.length >= 2 && labels.length <= 30, 'Informe de 2 a 30 opções de resposta.');
+      const taken = [];
+      q.options = labels.map(l => [bicaUniqueCode_(l, taken, 24), l]);
+    }
+    if (a.depends && a.depends.field) {
+      const parent = catalog.find(x => x.id === String(a.depends.field));
+      bicaAssert_(parent && parent.type !== 'text', 'A condição deve usar uma pergunta de escolha.');
+      const vals = (a.depends.values || []).map(String).filter(v => parent.options.some(o => o[0] === v));
+      bicaAssert_(vals.length, 'Escolha ao menos uma resposta que libera a pergunta.');
+      q.depends = {field: parent.id, values: vals};
+    }
+    const note = bicaClean_(a.note, 300);
+    if (note) q.note = note;
+    bicaSaveQuestionRow_(q, actor);
+    bicaSetParam_('EDICAO_QUESTIONARIO', String(edition));
+    let summary = 'Incluída pergunta “' + label + '” · área ' + group + ' · ' + BICA_TIPO_LABEL[type] + (q.options ? ' · ' + q.options.length + ' opções' : '');
+    if (q.depends) { const parent = catalog.find(x => x.id === q.depends.field); summary += ' · aparece se “' + parent.label + '” = ' + q.depends.values.map(v => (parent.options.find(o => o[0] === v) || [v, v])[1]).join(' / '); }
+    bicaQHistory_(actor, edition, 'QUESTIONARIO', q.id, 'INCLUIDA_PERGUNTA', summary, {pergunta: q});
+    bicaAudit_(actor, 'INCLUIR_PERGUNTA', 'PERGUNTA', q.id, {edicao: edition, pergunta: label});
+    bicaRewriteDictionary_();
+    return {id: q.id, edition: edition};
+  });
+}
+
+/** Corrige textos, inclui/oculta opções. Códigos nunca mudam nem são apagados; tipo e condição não mudam. */
+function bicaUpdateQuestion_(actor, a) {
+  return bicaLock_(function () {
+    const catalog = bicaQuestions_(), q = catalog.find(x => x.id === String(a.id));
+    bicaAssert_(q, 'Pergunta não encontrada.');
+    const before = JSON.parse(JSON.stringify(q)), edition = bicaEdition_() + 1, changes = [];
+    const label = bicaClean_(a.label, 300) || q.label, group = bicaClean_(a.group, 80) || q.group;
+    if (label !== q.label) {
+      bicaAssert_(label.length >= 5, 'Escreva a pergunta (pelo menos 5 caracteres).');
+      bicaAssert_(!catalog.some(x => x.id !== q.id && x.label.toLowerCase() === label.toLowerCase()), 'Já existe uma pergunta com este texto.');
+      changes.push(['ALTERADO_TEXTO', 'Alterado texto da pergunta: “' + q.label + '” → “' + label + '”']);
+      q.label = label;
+    }
+    if (group !== q.group) { changes.push(['ALTERADA_AREA', 'Pergunta “' + q.label + '” movida da área ' + q.group + ' para ' + group]); q.group = group; }
+    if (a.note !== undefined) { const note = bicaClean_(a.note, 300); if (note !== (q.note || '')) { changes.push(['ALTERADA_ORIENTACAO', 'Alterada orientação ao entrevistador em “' + q.label + '”']); if (note) q.note = note; else delete q.note; } }
+    if (q.type !== 'text' && Array.isArray(a.options)) {
+      const taken = q.options.map(o => o[0]);
+      const seen = {};
+      q.options.forEach(o => { seen[String(o[1]).toLowerCase()] = o[0]; });
+      a.options.forEach(inp => {
+        const lab = bicaClean_(inp && inp.label, 150), hidden = !!(inp && inp.hidden);
+        const cur = inp && inp.code ? q.options.find(o => o[0] === String(inp.code)) : null;
+        if (cur) {
+          const meta = Object.assign({}, cur[2] || {});
+          if (lab && lab !== cur[1]) {
+            bicaAssert_(!seen[lab.toLowerCase()] || seen[lab.toLowerCase()] === cur[0], 'Opção repetida: ' + lab);
+            changes.push(['ALTERADA_OPCAO', 'Corrigido texto da opção em “' + q.label + '”: “' + cur[1] + '” → “' + lab + '”']);
+            delete seen[String(cur[1]).toLowerCase()]; seen[lab.toLowerCase()] = cur[0]; cur[1] = lab;
+          }
+          if (hidden !== !!meta.oculta) {
+            changes.push([hidden ? 'OCULTADA_OPCAO' : 'REATIVADA_OPCAO', (hidden ? 'Ocultada' : 'Reativada') + ' opção “' + cur[1] + '” em “' + q.label + '”']);
+            if (hidden) meta.oculta = true; else delete meta.oculta;
+          }
+          if (Object.keys(meta).length) cur[2] = meta; else if (cur.length > 2) cur.length = 2;
+        } else if (lab && !(inp && inp.code)) {
+          bicaAssert_(!seen[lab.toLowerCase()], 'Opção repetida: ' + lab);
+          const code = bicaUniqueCode_(lab, taken, 24);
+          q.options.push([code, lab, {desde: edition}]);
+          seen[lab.toLowerCase()] = code;
+          changes.push(['INCLUIDA_OPCAO', 'Incluída opção “' + lab + '” em “' + q.label + '”']);
+        }
+      });
+      bicaAssert_(q.options.filter(o => !(o[2] && o[2].oculta)).length >= 2, 'A pergunta precisa de pelo menos 2 opções visíveis.');
+      bicaAssert_(q.options.length <= 40, 'Limite de 40 opções por pergunta.');
+    }
+    if (!changes.length) return {id: q.id, edition: bicaEdition_(), unchanged: true};
+    bicaSaveQuestionRow_(q, actor);
+    bicaSetParam_('EDICAO_QUESTIONARIO', String(edition));
+    changes.forEach(c => bicaQHistory_(actor, edition, 'QUESTIONARIO', q.id, c[0], c[1], {antes: before, depois: q}));
+    bicaAudit_(actor, 'ALTERAR_PERGUNTA', 'PERGUNTA', q.id, {edicao: edition, alteracoes: changes.map(c => c[0])});
+    bicaRewriteDictionary_();
+    return {id: q.id, edition: edition, changes: changes.length};
+  });
+}
+
+/** Registra no histórico o que mudou ao publicar a configuração de um bloco. */
+function bicaBlockHistory_(actor, b, current, next, oldName, newName, version) {
+  const catalog = bicaQuestions_(), qLabel = id => (catalog.find(q => q.id === id) || {label: id}).label;
+  const mLabel = id => (BICA_MODULES.find(m => m.id === id) || {label: id}).label;
+  const edition = bicaEdition_(), rows = [];
+  if (oldName !== newName) rows.push(['', 'RENOMEADO_BLOCO', 'Bloco renomeado: “' + oldName + '” → “' + newName + '”']);
+  Object.keys(next.questions).forEach(id => { if (current.questions[id] !== next.questions[id]) rows.push([id, next.questions[id] ? 'ATIVADA_PERGUNTA' : 'DESATIVADA_PERGUNTA', (next.questions[id] ? 'Ativada' : 'Desativada') + ' pergunta “' + qLabel(id) + '” no ' + newName]); });
+  Object.keys(next.modules).forEach(id => { if (current.modules[id] !== next.modules[id]) rows.push(['', next.modules[id] ? 'MODULO_LIGADO' : 'MODULO_DESLIGADO', 'Módulo “' + mLabel(id) + '” ' + (next.modules[id] ? 'ligado' : 'desligado') + ' no ' + newName]); });
+  rows.forEach(r => bicaQHistory_(actor, edition, String(b.id), r[0], r[1], r[2], {bloco_versao: version}));
 }

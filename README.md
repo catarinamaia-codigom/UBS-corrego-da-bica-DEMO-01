@@ -34,7 +34,7 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 
 ### Atualizar depois
 
-> **Versão 1.2 do servidor:** depois de colar os três arquivos novos, execute `configurarBica()` de novo e publique uma nova versão em *Gerenciar implantações*. Isso cria a aba **Feedback** e a coluna `edicao_questionario` em **Entrevistas** e atualiza o **Dicionario**, sem apagar nada. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
+> **Versão 1.2 do servidor:** depois de colar os três arquivos novos, execute `configurarBica()` de novo e publique uma nova versão em *Gerenciar implantações*. Isso cria as abas **Feedback**, **Perguntas** e **Historico_Questionario** e a coluna `edicao_questionario` em **Entrevistas**, e atualiza o **Dicionario**, sem apagar nada. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
 
 
 - **Interface (`index.html`):** basta fazer o commit no GitHub. Para o Apps Script mostrar a mudança na hora, execute `atualizarInterfaceBica()` no editor.
@@ -60,12 +60,22 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 
 Recursos trazidos do Apps Script anterior: tokens assinados, validação no servidor, envio sem duplicar (`request_id`), termos versionados com o texto gravado junto ao consentimento, etapas PREPARAÇÃO/OPERAÇÃO (TREINAMENTO/PESQUISA), auditoria, fusão de ruas e de cadastros, confirmação de localização, gestão de acessos e as abas **Resumo** e **Dicionario**.
 
-## Mudar perguntas
+## Mudar perguntas (Construtor da pesquisa)
 
-- **Ligar ou desligar perguntas de um bloco:** no app, menu **Construtor da pesquisa** (coordenação) → marque ou desmarque → **Publicar**. Vale para as próximas entrevistas; as respostas antigas continuam guardadas.
-- **Mudar o texto, criar pergunta ou criar opção:** edite `BICA_QUESTIONS` em `apps-script/Schema.gs` e some 1 em `BICA_EDICAO_QUESTIONARIO`. Marque o que é novo com a edição em que entrou, por exemplo `['codigo', 'Texto da opção', {desde: 3}]` ou `desde: 3` na pergunta. Depois execute `configurarBica()` e publique uma nova versão.
-- **Entrevistas antigas:** cada entrevista grava a edição do questionário (`edicao_questionario` em **Entrevistas**; vazio = edição 1). Em Indicadores e nas fichas, uma pergunta ou opção criada depois aparece como **“não constava”**, e o percentual dessa opção é calculado só sobre as entrevistas em que ela já existia.
-- Nunca reaproveite o código de uma opção com outro significado: crie um código novo.
+Tudo é feito no app, no menu **Construtor da pesquisa** (somente coordenação):
+
+- **Ligar ou desligar perguntas de um bloco:** marque ou desmarque e clique em **Publicar**. Vale para as próximas entrevistas.
+- **＋ Incluir pergunta:** escolha a área, o texto, o tipo (única, múltipla ou texto livre) e as opções, uma por linha. Opcionalmente, indique quando ela aparece, por exemplo “somente se Conecta = Não conheço”. A pergunta entra ativada nos blocos.
+- **✎ Editar** em cada pergunta:
+  - corrigir o texto da pergunta ou de uma opção (o código continua o mesmo, então o significado não pode mudar);
+  - incluir opções novas;
+  - ocultar opções que deixaram de valer.
+  Nada é apagado: respostas antigas com uma opção oculta continuam válidas.
+- **Histórico de alterações do questionário:** fica abaixo do Construtor. Mostra quem alterou, quando e o quê, com palavras-chave como *Incluída pergunta*, *Alterado texto*, *Incluída opção*, *Ocultada opção*, *Ativada/Desativada pergunta* e *Módulo ligado*. Também fica na aba **Historico_Questionario**.
+
+Cada inclusão ou alteração cria uma nova **edição do questionário** (parâmetro `EDICAO_QUESTIONARIO`). Cada entrevista grava a edição com que foi feita (`edicao_questionario` em **Entrevistas**; vazio = edição 1). Uma visita feita sem internet guarda a edição que o aparelho estava usando. Em Indicadores e nas fichas, o que foi criado depois de uma entrevista aparece como **“não constava”**, e o percentual de uma opção nova é calculado só sobre as entrevistas em que ela já existia.
+
+As perguntas incluídas ou alteradas ficam na aba **Perguntas**, que se sobrepõe ao questionário de base em `Schema.gs`. Não edite essa aba à mão: use o app, que valida tudo e registra o histórico.
 
 ## Modo offline (coleta sem internet)
 
@@ -82,7 +92,7 @@ Funciona no link do GitHub Pages (celular, tablet ou computador). O link `/exec`
 
 ## Abas da planilha
 
-`Acessos` · `Parametros` · `Blocos` · `Ruas` · `Apelidos_Ruas` · `Equipes` · `ACS` · `Fusoes_Cadastros` · `Domicilios` · `Pessoas` · `Visitas` · `Participacoes` · `Entrevistas` · `Respostas` · `Termos` · `Consentimentos` · `Config_PDF` · `Dicionario` · `Auditoria` · `Resumo` · `Instrucoes`
+`Acessos` · `Parametros` · `Blocos` · `Perguntas` · `Historico_Questionario` · `Ruas` · `Apelidos_Ruas` · `Equipes` · `ACS` · `Fusoes_Cadastros` · `Domicilios` · `Pessoas` · `Visitas` · `Participacoes` · `Entrevistas` · `Respostas` · `Termos` · `Consentimentos` · `Config_PDF` · `Dicionario` · `Auditoria` · `Resumo` · `Instrucoes`
 
 Abas em laranja guardam dados pessoais ou credenciais. Não apague linhas para corrigir dados: use o app, que registra tudo na auditoria.
 
