@@ -551,11 +551,21 @@ function bicaAllowedAnswers_(input, config) {
       const matched = Array.isArray(earlier) ? earlier.some(x => q.depends.values.indexOf(x) >= 0) : q.depends.values.indexOf(earlier) >= 0;
       if (!matched) return;
     }
-    if (q.type === 'text') { ans[q.id] = bicaClean_(val, 1000); return; }
-    const allowed = (q.options || []).map(x => x[0]);
+    // Visitas coletadas antes de uma mudança de tipo (ex.: sem internet) chegam no formato antigo: são aceitas.
+    const allowed = (q.options || []).map(x => x[0]), was = t => (q.typeChanges || []).some(c => c.de === t);
+    const codes = Array.isArray(val) ? val.map(String) : null;
+    if (q.type === 'text') {
+      if (codes && was('single') + was('multi') && codes.every(x => allowed.indexOf(x) >= 0)) { ans[q.id] = allowed.filter(x => codes.indexOf(x) >= 0); return; }
+      ans[q.id] = bicaClean_(Array.isArray(val) ? val.join(', ') : val, 1000); return;
+    }
+    if (!codes && allowed.indexOf(val) < 0 && was('text') && typeof val === 'string') { ans[q.id] = bicaClean_(val, 1000); return; }
     if (q.type === 'multi') {
-      bicaAssert_(Array.isArray(val) && val.every(x => allowed.indexOf(x) >= 0), 'Resposta inválida: ' + q.label);
-      ans[q.id] = allowed.filter(x => val.indexOf(x) >= 0);
+      const list = codes || [String(val)];
+      bicaAssert_(list.every(x => allowed.indexOf(x) >= 0), 'Resposta inválida: ' + q.label);
+      ans[q.id] = allowed.filter(x => list.indexOf(x) >= 0);
+    } else if (codes) {
+      bicaAssert_(codes.length && codes.every(x => allowed.indexOf(x) >= 0) && (codes.length === 1 || was('multi')), 'Resposta inválida: ' + q.label);
+      ans[q.id] = codes.length === 1 ? codes[0] : allowed.filter(x => codes.indexOf(x) >= 0);
     } else {
       bicaAssert_(allowed.indexOf(val) >= 0, 'Resposta inválida: ' + q.label);
       ans[q.id] = val;
@@ -1063,7 +1073,10 @@ function bicaQuestions_() {
     if (bicaStr_(r.observacao)) q.note = bicaStr_(r.observacao);
     const since = Math.floor(Number(r.desde) || 0);
     if (since > 1) q.desde = since;
-    if (q.type === 'text') delete q.options;
+    let types = [];
+    try { types = JSON.parse(bicaStr_(r.tipos_json) || '[]'); } catch (e) { types = []; }
+    if (Array.isArray(types) && types.length) q.typeChanges = types;
+    if (q.type === 'text' && !q.options.length) delete q.options;
     const i = out.findIndex(x => x.id === id);
     if (i >= 0) { out[i] = q; return; }
     let at = -1;
@@ -1093,10 +1106,20 @@ function bicaQHistory_(actor, edition, scope, qid, action, summary, details) {
 }
 
 function bicaQuestionRow_(q, actor) {
-  return {id: q.id, grupo: q.group, pergunta: q.label, tipo: q.type, opcoes_json: JSON.stringify(q.type === 'text' ? [] : q.options), condicao_json: q.depends ? JSON.stringify(q.depends) : '', origem: q.origin || 'incluida', observacao: q.note || '', desde: q.desde || '', atualizado_em: bicaNow_(), atualizado_por: actor.name || actor.id};
+  return {id: q.id, grupo: q.group, pergunta: q.label, tipo: q.type, opcoes_json: JSON.stringify(q.options || []), tipos_json: q.typeChanges && q.typeChanges.length ? JSON.stringify(q.typeChanges) : '', condicao_json: q.depends ? JSON.stringify(q.depends) : '', origem: q.origin || 'incluida', observacao: q.note || '', desde: q.desde || '', atualizado_em: bicaNow_(), atualizado_por: actor.name || actor.id};
+}
+/** Acrescenta no fim da aba as colunas novas do esquema (sem mexer nas existentes). */
+function bicaEnsureColumns_(name) {
+  const s = bicaEnsureSheet_(name), want = BICA_SHEETS[name];
+  const have = s.getRange(1, 1, 1, Math.max(1, s.getLastColumn())).getValues()[0].map(String);
+  const missing = want.filter(h => have.indexOf(h) < 0);
+  if (!missing.length) return s;
+  s.getRange(1, have.length + 1, 1, missing.length).setValues([missing]).setBackground('#145da4').setFontColor('#ffffff').setFontWeight('bold');
+  delete BICA_HEAD_CACHE[name]; delete BICA_ROWS_CACHE[name];
+  return s;
 }
 function bicaSaveQuestionRow_(q, actor) {
-  bicaEnsureSheet_('Perguntas');
+  bicaEnsureColumns_('Perguntas');
   const row = bicaQuestionRow_(q, actor);
   if (bicaRows_('Perguntas').some(r => String(r.id) === q.id)) bicaSetRow_('Perguntas', 'id', q.id, row);
   else bicaAppend_('Perguntas', row);
@@ -1158,8 +1181,23 @@ function bicaUpdateQuestion_(actor, a) {
       q.label = label;
     }
     if (group !== q.group) { changes.push(['ALTERADA_AREA', 'Pergunta “' + q.label + '” movida da área ' + q.group + ' para ' + group]); q.group = group; }
+    const newType = a.type ? String(a.type) : q.type;
+    if (newType !== q.type) {
+      bicaAssert_(['single', 'multi', 'text'].indexOf(newType) >= 0, 'Tipo de pergunta inválido.');
+      if (newType === 'text') bicaAssert_(!catalog.some(x => x.depends && x.depends.field === q.id), 'Outra pergunta aparece conforme a resposta desta. Ela não pode virar texto livre.');
+      if (q.type === 'text' && !(q.options || []).length) {
+        const labels = bicaCleanOptionLabels_((a.options || []).filter(o => !o.code));
+        bicaAssert_(labels.length >= 2, 'Para virar escolha, informe pelo menos 2 opções de resposta.');
+        q.options = [];
+        a.options = labels.map(l => ({label: l}));
+      }
+      changes.push(['ALTERADO_TIPO', 'Alterado tipo de resposta de “' + q.label + '”: ' + BICA_TIPO_LABEL[q.type] + ' → ' + BICA_TIPO_LABEL[newType]]);
+      q.typeChanges = (q.typeChanges || []).concat([{edicao: edition, de: q.type, para: newType}]);
+      q.type = newType;
+    }
     if (a.note !== undefined) { const note = bicaClean_(a.note, 300); if (note !== (q.note || '')) { changes.push(['ALTERADA_ORIENTACAO', 'Alterada orientação ao entrevistador em “' + q.label + '”']); if (note) q.note = note; else delete q.note; } }
     if (q.type !== 'text' && Array.isArray(a.options)) {
+      q.options = q.options || [];
       const taken = q.options.map(o => o[0]);
       const seen = {};
       q.options.forEach(o => { seen[String(o[1]).toLowerCase()] = o[0]; });
