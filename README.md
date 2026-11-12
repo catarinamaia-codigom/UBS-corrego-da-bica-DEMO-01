@@ -60,6 +60,19 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 
 Recursos trazidos do Apps Script anterior: tokens assinados, validação no servidor, envio sem duplicar (`request_id`), termos versionados com o texto gravado junto ao consentimento, etapas PREPARAÇÃO/OPERAÇÃO (TREINAMENTO/PESQUISA), auditoria, fusão de ruas e de cadastros, confirmação de localização, gestão de acessos e as abas **Resumo** e **Dicionario**.
 
+## Modo offline (coleta sem internet)
+
+Funciona no link do GitHub Pages (celular, tablet ou computador). O link `/exec` do Apps Script precisa de internet para abrir.
+
+- **Primeiro acesso com internet.** Cada pessoa precisa entrar uma vez com internet no aparelho. Isso guarda uma cópia dos dados (ruas, casas, questionário) e permite entrar depois sem internet, com o mesmo login e senha.
+- **Visitas guardadas antes de enviar.** Ao concluir, a visita é gravada no aparelho (IndexedDB + cópia no armazenamento local) e só depois enviada. Ela só sai do aparelho quando o servidor confirma a gravação na planilha.
+- **Envio automático e sem duplicar.** O envio acontece quando a internet volta, a cada 30 s e ao reabrir o app. Cada visita tem um código único (`request_id`), então reenviar nunca duplica registros.
+- **Prazo.** O envio automático usa a sessão do login (12 h). Passado o prazo, as visitas continuam guardadas: basta entrar de novo com internet para elas subirem.
+- **Barra fixa no rodapé.** Mostra Online/Offline, a data e hora da última atualização, quantas visitas estão guardadas e o prazo para se conectar.
+- **Recusas do servidor.** Se o servidor recusar uma visita (ex.: dado inválido), ela fica marcada em “⚠ com erro” e pode ser reenviada, descartada ou baixada como cópia de segurança (JSON).
+- **Rascunho automático.** A visita em andamento é salva enquanto é preenchida e volta se o app fechar ou recarregar.
+- **Cuidados no aparelho.** Não use janela anônima, não limpe os dados do navegador/site e use sempre o mesmo navegador e o mesmo link. Se o aparelho for perdido antes de sincronizar, as visitas guardadas nele se perdem.
+
 ## Abas da planilha
 
 `Acessos` · `Parametros` · `Blocos` · `Ruas` · `Apelidos_Ruas` · `Equipes` · `ACS` · `Fusoes_Cadastros` · `Domicilios` · `Pessoas` · `Visitas` · `Participacoes` · `Entrevistas` · `Respostas` · `Termos` · `Consentimentos` · `Config_PDF` · `Dicionario` · `Auditoria` · `Resumo` · `Instrucoes`
