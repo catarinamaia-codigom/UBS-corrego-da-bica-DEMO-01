@@ -26,7 +26,7 @@ const BICA_SHEETS = {
   'Config_PDF': ['bloco_id', 'campos_json', 'atualizado_em', 'alterado_por'],
   'Dicionario': ['pergunta_id', 'grupo', 'pergunta', 'tipo', 'opcoes_json', 'origem', 'observacao'],
   'Auditoria': ['id', 'momento', 'ator_id', 'acao', 'entidade', 'entidade_id', 'detalhes_json'],
-  'Perguntas': ['id', 'grupo', 'pergunta', 'tipo', 'opcoes_json', 'condicao_json', 'origem', 'observacao', 'desde', 'atualizado_em', 'atualizado_por'],
+  'Perguntas': ['id', 'grupo', 'pergunta', 'tipo', 'opcoes_json', 'condicao_json', 'origem', 'observacao', 'desde', 'atualizado_em', 'atualizado_por', 'tipos_json'],
   'Historico_Questionario': ['id', 'momento', 'ator_id', 'ator_nome', 'edicao', 'escopo', 'pergunta_id', 'acao', 'resumo', 'detalhes_json'],
   'Feedback': ['id', 'momento', 'ator_id', 'ator_nome', 'perfil', 'tipo', 'texto', 'pagina', 'status', 'resolvido_em', 'resolvido_por'],
   'Resumo': ['indicador', 'valor', 'observacao']
@@ -44,7 +44,7 @@ const BICA_OUTCOMES = ['CONCORDOU', 'RECUSOU', 'NAO_SABE', 'AUSENTE'];
 /**
  * EDIÇÃO DO QUESTIONÁRIO
  * - Tudo é feito no app, em Construtor da pesquisa (coordenação):
- *   ligar/desligar perguntas por bloco, incluir pergunta, corrigir textos, incluir/ocultar opções.
+ *   ligar/desligar perguntas por bloco, incluir pergunta, corrigir textos, mudar o tipo de resposta, incluir/ocultar opções.
  *   As inclusões e alterações ficam na aba Perguntas e o histórico na aba Historico_Questionario.
  * - BICA_QUESTIONS abaixo é o questionário de base. A aba Perguntas sobrepõe/acrescenta (mesmo id = substitui).
  * - Cada alteração aumenta a edição do questionário (parâmetro EDICAO_QUESTIONARIO). Cada entrevista grava a

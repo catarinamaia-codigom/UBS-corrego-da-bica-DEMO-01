@@ -34,7 +34,7 @@ Apps Script /exec (mesmo HTML) ────┘        login, validação, audito
 
 ### Atualizar depois
 
-> **Versão 1.2 do servidor:** depois de colar os três arquivos novos, execute `configurarBica()` de novo e publique uma nova versão em *Gerenciar implantações*. Isso cria as abas **Feedback**, **Perguntas** e **Historico_Questionario** e a coluna `edicao_questionario` em **Entrevistas**, e atualiza o **Dicionario**, sem apagar nada. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
+> **Versão 1.3 do servidor:** depois de colar os três arquivos novos, execute `configurarBica()` de novo e publique uma nova versão em *Gerenciar implantações*. Isso cria as abas **Feedback**, **Perguntas** e **Historico_Questionario** e as colunas `edicao_questionario` (em **Entrevistas**) e `tipos_json` (em **Perguntas**), e atualiza o **Dicionario**, sem apagar nada. Enquanto o servidor estiver na versão antiga, a coordenação vê um aviso vermelho no topo do app.
 
 
 - **Interface (`index.html`):** basta fazer o commit no GitHub. Para o Apps Script mostrar a mudança na hora, execute `atualizarInterfaceBica()` no editor.
@@ -68,10 +68,11 @@ Tudo é feito no app, no menu **Construtor da pesquisa** (somente coordenação)
 - **＋ Incluir pergunta:** escolha a área, o texto, o tipo (única, múltipla ou texto livre) e as opções, uma por linha. Opcionalmente, indique quando ela aparece, por exemplo “somente se Conecta = Não conheço”. A pergunta entra ativada nos blocos.
 - **✎ Editar** em cada pergunta:
   - corrigir o texto da pergunta ou de uma opção (o código continua o mesmo, então o significado não pode mudar);
+  - mudar o tipo de resposta (Única, Múltipla ou Texto livre). As respostas antigas continuam como foram dadas: nos indicadores entram somadas e com o aviso de quantas são do formato anterior, e na ficha aparecem como “respondida quando a pergunta era de …”. Uma pergunta da qual outra depende não pode virar texto livre;
   - incluir opções novas;
   - ocultar opções que deixaram de valer.
   Nada é apagado: respostas antigas com uma opção oculta continuam válidas.
-- **Histórico de alterações do questionário:** fica abaixo do Construtor. Mostra quem alterou, quando e o quê, com palavras-chave como *Incluída pergunta*, *Alterado texto*, *Incluída opção*, *Ocultada opção*, *Ativada/Desativada pergunta* e *Módulo ligado*. Também fica na aba **Historico_Questionario**.
+- **Histórico de alterações do questionário:** fica abaixo do Construtor. Mostra quem alterou, quando e o quê, com palavras-chave como *Incluída pergunta*, *Alterado texto*, *Alterado tipo*, *Incluída opção*, *Ocultada opção*, *Ativada/Desativada pergunta* e *Módulo ligado*. Também fica na aba **Historico_Questionario**.
 
 Cada inclusão ou alteração cria uma nova **edição do questionário** (parâmetro `EDICAO_QUESTIONARIO`). Cada entrevista grava a edição com que foi feita (`edicao_questionario` em **Entrevistas**; vazio = edição 1). Uma visita feita sem internet guarda a edição que o aparelho estava usando. Em Indicadores e nas fichas, o que foi criado depois de uma entrevista aparece como **“não constava”**, e o percentual de uma opção nova é calculado só sobre as entrevistas em que ela já existia.
 
